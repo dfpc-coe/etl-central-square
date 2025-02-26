@@ -5,11 +5,14 @@ on:
     tags:
       - '*'
 
+permissions:
+  contents: 'write'
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Get tag
         id: tag
