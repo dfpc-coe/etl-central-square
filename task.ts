@@ -1,4 +1,6 @@
 import { Static, Type, TSchema } from '@sinclair/typebox';
+import Err from '@openaddresses/batch-error';
+import Schema from '@openaddresses/batch-schema';
 import type { Event } from '@tak-ps/etl';
 import ETL, { SchemaType, handler as internal, local, InputFeature, InputFeatureCollection, DataFlowType, InvocationType } from '@tak-ps/etl';
 
@@ -25,7 +27,7 @@ const OutputSchema = Type.Object({})
 export default class Task extends ETL {
     static name = 'default'
     static flow = [ DataFlowType.Incoming ];
-    static invocation = [ InvocationType.Schedule ];
+    static invocation = [ InvocationType.Webhook ];
 
     async schema(
         type: SchemaType = SchemaType.Input,
@@ -40,6 +42,40 @@ export default class Task extends ETL {
         } else {
             return Type.Object({});
         }
+    }
+
+    static webhooks(schema: Schema, task: Task) {
+        schema.post('/:webhookid', {
+            name: 'Incoming Webhook',
+            group: 'Default',
+            description: 'Get a CAD Update',
+            params: Type.Object({
+                webhookid: Type.String()
+            }),
+            body: Type.Any(),
+            res: Type.Object({
+                status: Type.Number(),
+                message: Type.String()
+            })
+        }, async (req, res) => {
+            try {
+                console.error(req.body);
+
+                const fc: Static<typeof InputFeatureCollection> = {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+
+                await task.submit(fc);
+
+                res.json({
+                    status: 200,
+                    message: 'Received'
+                });
+            } catch (err) {
+                Err.respond(err, res);
+            }
+        })
     }
 
     async control(): Promise<void> {
