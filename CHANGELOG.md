@@ -10,6 +10,10 @@
 
 ## Version History
 
+### v1.1.1
+
+- :rocket: Add write permission
+
 ### v1.1.0
 
 - :rocket: Log Webhooks
