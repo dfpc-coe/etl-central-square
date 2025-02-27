@@ -25,7 +25,7 @@ const InputSchema = Type.Object({
 const OutputSchema = Type.Object({})
 
 export default class Task extends ETL {
-    static name = 'default'
+    static name = 'etl-central-square'
     static flow = [ DataFlowType.Incoming ];
     static invocation = [ InvocationType.Webhook ];
 
