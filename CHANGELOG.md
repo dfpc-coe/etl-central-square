@@ -10,6 +10,10 @@
 
 ## Version History
 
+### v1.1.3
+
+- :rocket: Change Name
+
 ### v1.1.2
 
 - :rocket: Add Context Object
