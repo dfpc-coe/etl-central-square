@@ -10,6 +10,10 @@
 
 ## Version History
 
+### v1.1.2
+
+- :rocket: Add Context Object
+
 ### v1.1.1
 
 - :rocket: Add write permission
