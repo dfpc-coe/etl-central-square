@@ -44,7 +44,7 @@ export default class Task extends ETL {
         }
     }
 
-    static webhooks(schema: Schema, task: Task) {
+    static async webhooks(schema: Schema, task: Task): Promise<void> {
         schema.post('/:webhookid', {
             name: 'Incoming Webhook',
             group: 'Default',
@@ -97,8 +97,8 @@ export default class Task extends ETL {
     }
 }
 
-await local(new Task(import.meta.url), import.meta.url);
+await local(await Task.init(import.meta.url), import.meta.url);
 export async function handler(event: Event = {}, context?: object) {
-    return await internal(new Task(import.meta.url), event, context);
+    return await internal(await Task.init(import.meta.url), event, context);
 }
 
