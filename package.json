@@ -1,9 +1,9 @@
 {
-    "name": "coe-etl-template",
+    "name": "coe-etl-central-square",
     "type": "module",
     "prviate": true,
     "version": "1.0.0",
-    "description": "",
+    "description": "Bring CentralSquare Public Safety Suite Pro CAD locations into the TAK System",
     "main": "task.ts",
     "scripts": {
         "lint": "eslint *.ts",
@@ -12,11 +12,14 @@
     },
     "author": "Nicholas Ingalls <nicholas.ingalls@state.co.us>",
     "license": "ISC",
+    "engines": {
+        "node": ">= 24"
+    },
     "devDependencies": {
         "@eslint/js": "^10.0.0",
         "eslint": "^10.0.0",
         "typescript": "^6.0.0",
-        "typescript-eslint": "^8.0.0"
+        "typescript-eslint": "^8.58.1"
     },
     "dependencies": {
         "@sinclair/typebox": "^0.34.0",
