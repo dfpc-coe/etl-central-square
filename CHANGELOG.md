@@ -12,6 +12,10 @@
 
 ### Pending Release
 
+### v1.2.0
+
+- :rocket: Build & push via `cloudtak-etl` so `capabilities.json` is annotated onto the OCI manifest
+
 ### v1.1.0
 
 - :tada: Add optional `FallbackCoordinates` (`Latitude,Longitude`) used for records without coordinates
