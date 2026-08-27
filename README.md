@@ -22,6 +22,7 @@
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
 | `DataType` | Yes | `Calls for Service` posts currently active CFS incident locations, `Units` posts AVL unit locations |
+| `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates - ie `39.7392,-104.9903` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
 
 A single layer posts either calls for service or unit locations. To bring both into TAK, configure two layers against the same

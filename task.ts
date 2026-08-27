@@ -33,6 +33,9 @@ const InputSchema = Type.Object({
         enum: [DATA_TYPE_CFS, DATA_TYPE_UNITS],
         description: 'Calls for Service posts CFS incident locations, Units posts AVL unit locations'
     }),
+    FallbackCoordinates: Type.Optional(Type.String({
+        description: 'Latitude,Longitude used for records without coordinates - ie 39.7392,-104.9903'
+    })),
     DEBUG: Type.Boolean({
         default: false,
         description: 'Print results in logs'
@@ -246,6 +249,23 @@ function coordinates(record: Unknowns): [number, number] | null {
     }
 
     return null;
+}
+
+/**
+ * Records without a usable location are placed at the optional configured
+ * fallback so the call or unit is still visible on the map
+ */
+function fallback(env: Static<typeof InputSchema>): [number, number] | null {
+    if (!env.FallbackCoordinates) return null;
+
+    const [lat, lon] = env.FallbackCoordinates.split(',').map((part) => toCoordinate(part.trim()));
+
+    if (lat === null || lat === undefined || lon === null || lon === undefined) {
+        console.error(`not ok - invalid FallbackCoordinates: ${env.FallbackCoordinates}`);
+        return null;
+    }
+
+    return [lon, lat];
 }
 
 function addressLine(record: Unknowns): string | null {
@@ -483,13 +503,14 @@ export default class Task extends ETL {
         env: Static<typeof InputSchema>,
         record: Unknowns
     ): Static<typeof Feature.InputFeature> | null {
-        const geometry = coordinates(record);
-
         const number = describe(record.CFSNumber) ?? describe(record.ExternalCFSNumber);
 
+        let geometry = coordinates(record);
+
         if (!geometry) {
-            if (env.DEBUG) console.error(`DEBUG - CFS ${number ?? 'Unknown'} has no coordinates`);
-            return null;
+            geometry = fallback(env);
+            if (env.DEBUG) console.error(`DEBUG - CFS ${number ?? 'Unknown'} has no coordinates${geometry ? ' - using fallback' : ''}`);
+            if (!geometry) return null;
         }
 
         if (!number) return null;
@@ -549,7 +570,7 @@ export default class Task extends ETL {
         env: Static<typeof InputSchema>,
         record: Unknowns
     ): Static<typeof Feature.InputFeature> | null {
-        const geometry = coordinates(record);
+        const geometry = coordinates(record) ?? fallback(env);
 
         const identifier = describe(record.UnitID)
             ?? describe(record.UniqueIdentifier)

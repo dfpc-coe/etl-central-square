@@ -10,6 +10,10 @@
 
 ## Version History
 
+### Pending Release
+
+- :tada: Add optional `FallbackCoordinates` (`Latitude,Longitude`) used for records without coordinates
+
 ### v1.0.0
 
 - :tada: Post CentralSquare Pro Suite Calls for Service locations to the map via `POST /cfs_core/search`
