@@ -12,6 +12,13 @@
 
 ### Pending Release
 
+### v1.3.0
+
+- :tada: Geocode Calls for Service that have an address but no coordinates via the CloudTAK Search API
+- :tada: Add optional `BoundingBox` (`minLon,minLat,maxLon,maxLat`) - geocoded results outside of the box are discarded
+- :rocket: Request `event:create`, `event:read`, `event:update` & `search:read` permissions in `capabilities.json`
+- :pencil2: Document CloudTAK permissions & geocoding behaviour
+
 ### v1.2.0
 
 - :rocket: Build & push via `cloudtak-etl` so `capabilities.json` is annotated onto the OCI manifest

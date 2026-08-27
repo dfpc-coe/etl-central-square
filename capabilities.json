@@ -11,6 +11,26 @@
             "resource": "feature:*",
             "required": true,
             "description": "CentralSquare posts CAD call for service and unit locations to the map"
+        },
+        {
+            "resource": "event:create",
+            "required": false,
+            "description": "CentralSquare creates CoreEvents for CAD calls for service"
+        },
+        {
+            "resource": "event:read",
+            "required": false,
+            "description": "CentralSquare reads existing CoreEvents to avoid duplicating CAD calls for service"
+        },
+        {
+            "resource": "event:update",
+            "required": false,
+            "description": "CentralSquare modifies existing CoreEvents as CAD calls for service change"
+        },
+        {
+            "resource": "search:read",
+            "required": false,
+            "description": "CentralSquare geocodes call for service addresses that have no coordinates via the CloudTAK search API"
         }
     ],
     "invocations": {

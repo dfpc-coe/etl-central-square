@@ -33,8 +33,11 @@ const InputSchema = Type.Object({
         enum: [DATA_TYPE_CFS, DATA_TYPE_UNITS],
         description: 'Calls for Service posts CFS incident locations, Units posts AVL unit locations'
     }),
+    BoundingBox: Type.Optional(Type.String({
+        description: 'Bounding Box of acceptable geocoded locations as minLon,minLat,maxLon,maxLat - ie -105.4,39.5,-104.6,40.0. Geocoded results outside of this box are discarded'
+    })),
     FallbackCoordinates: Type.Optional(Type.String({
-        description: 'Latitude,Longitude used for records without coordinates - ie 39.7392,-104.9903'
+        description: 'Latitude,Longitude used for records without coordinates (and that could not be geocoded) - ie 39.7392,-104.9903'
     })),
     DEBUG: Type.Boolean({
         default: false,
@@ -138,6 +141,24 @@ const CADUnit = Type.Object({
     LocationDateTime: Type.Optional(Nullable(Type.String())),
     Location: Type.Optional(Nullable(CADAddress)),
     Address: Type.Optional(Nullable(CADAddress))
+});
+
+const SuggestResponse = Type.Object({
+    items: Type.Array(Type.Object({
+        text: Type.String(),
+        magicKey: Type.String()
+    }))
+});
+
+const ForwardResponse = Type.Object({
+    items: Type.Array(Type.Object({
+        address: Type.String(),
+        location: Type.Object({
+            x: Type.Number(),
+            y: Type.Number()
+        }),
+        score: Type.Number()
+    }))
 });
 
 const TokenResponse = Type.Object({
@@ -268,6 +289,30 @@ function fallback(env: Static<typeof InputSchema>): [number, number] | null {
     return [lon, lat];
 }
 
+type BBox = [number, number, number, number];
+
+/**
+ * Parse the optional BoundingBox env - minLon,minLat,maxLon,maxLat - returning
+ * null when unset so geocoded results are accepted anywhere
+ */
+function bbox(env: Static<typeof InputSchema>): BBox | null {
+    if (!env.BoundingBox) return null;
+
+    const parts = env.BoundingBox.split(',').map((part) => Number(part.trim()));
+
+    if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part)) || parts[0] > parts[2] || parts[1] > parts[3]) {
+        console.error(`not ok - invalid BoundingBox: ${env.BoundingBox}`);
+        return null;
+    }
+
+    return parts as BBox;
+}
+
+function within(box: BBox | null, [lon, lat]: [number, number]): boolean {
+    if (!box) return true;
+    return lon >= box[0] && lon <= box[2] && lat >= box[1] && lat <= box[3];
+}
+
 function addressLine(record: Unknowns): string | null {
     for (const key of COORDINATE_CONTAINERS) {
         const container = record[key];
@@ -359,8 +404,10 @@ export default class Task extends ETL {
                 if (feat) fc.features.push(feat);
             }
         } else {
+            const geocoded = new Map<string, [number, number] | null>();
+
             for (const record of await this.controlSearch(env, base, '/cfs_core/search', 'cfs_cores', { CurrentlyActive: true })) {
-                const feat = this.controlCFS(env, record);
+                const feat = await this.controlCFS(env, record, geocoded);
                 if (feat) fc.features.push(feat);
             }
         }
@@ -499,13 +546,83 @@ export default class Task extends ETL {
         });
     }
 
-    controlCFS(
+    /**
+     * Geocode a free form address via the CloudTAK Search API - suggest returns a
+     * magicKey which forward resolves to a location. Results outside of the
+     * configured BoundingBox are rejected. Requires the search:read permission
+     *
+     * @returns [lon, lat] or null if no acceptable location was found
+     */
+    async controlGeocode(
         env: Static<typeof InputSchema>,
-        record: Unknowns
-    ): Static<typeof Feature.InputFeature> | null {
+        address: string,
+        cache: Map<string, [number, number] | null>
+    ): Promise<[number, number] | null> {
+        const cached = cache.get(address);
+        if (cached !== undefined) return cached;
+
+        let geometry: [number, number] | null = null;
+
+        try {
+            const box = bbox(env);
+
+            const suggest = new URL('/api/search/suggest', this.etl.api);
+            suggest.searchParams.set('query', address);
+            suggest.searchParams.set('limit', '1');
+
+            if (box) {
+                suggest.searchParams.set('longitude', String((box[0] + box[2]) / 2));
+                suggest.searchParams.set('latitude', String((box[1] + box[3]) / 2));
+            }
+
+            const suggestion = this.type(SuggestResponse, await this.fetch(suggest)).items[0];
+
+            if (suggestion) {
+                const forward = new URL('/api/search/forward', this.etl.api);
+                forward.searchParams.set('query', suggestion.text);
+                forward.searchParams.set('magicKey', suggestion.magicKey);
+                forward.searchParams.set('limit', '1');
+
+                const result = this.type(ForwardResponse, await this.fetch(forward)).items[0];
+
+                if (result) {
+                    const candidate: [number, number] = [result.location.x, result.location.y];
+
+                    if (within(box, candidate)) {
+                        geometry = candidate;
+                    } else if (env.DEBUG) {
+                        console.error(`DEBUG - geocoded "${address}" to ${candidate.join(',')} which is outside of BoundingBox - rejecting`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(`not ok - geocoding "${address}" failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        if (env.DEBUG) console.error(`DEBUG - geocoded "${address}" => ${geometry ? geometry.join(',') : 'no acceptable result'}`);
+
+        cache.set(address, geometry);
+
+        return geometry;
+    }
+
+    async controlCFS(
+        env: Static<typeof InputSchema>,
+        record: Unknowns,
+        geocoded: Map<string, [number, number] | null> = new Map()
+    ): Promise<Static<typeof Feature.InputFeature> | null> {
         const number = describe(record.CFSNumber) ?? describe(record.ExternalCFSNumber);
 
         let geometry = coordinates(record);
+
+        if (!geometry) {
+            const address = addressLine(record);
+
+            if (address) {
+                if (env.DEBUG) console.error(`DEBUG - CFS ${number ?? 'Unknown'} has no coordinates - geocoding "${address}"`);
+                geometry = await this.controlGeocode(env, address, geocoded);
+            }
+        }
 
         if (!geometry) {
             geometry = fallback(env);

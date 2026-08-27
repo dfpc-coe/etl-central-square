@@ -22,7 +22,8 @@
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
 | `DataType` | Yes | `Calls for Service` posts currently active CFS incident locations, `Units` posts AVL unit locations |
-| `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates - ie `39.7392,-104.9903` |
+| `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
+| `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
 
 A single layer posts either calls for service or unit locations. To bring both into TAK, configure two layers against the same
@@ -50,12 +51,24 @@ access. The Bearer token is therefore cached in the layer's ephemeral store and 
 Every request carries the required `From` header so the agency can attribute API activity to this integration in the Pro Suite
 audit trail.
 
-Records without usable coordinates are skipped. Latitude and longitude are read from the record itself (units) or from the
-nested `GeneralAddress`, `Address` or `Location` object (calls for service), and both the `Latitude`/`Longitude` and `Lat`/`Lon`
-spellings are accepted. Dropdown values - `{ UniqueIdentifier, Description, Code }` - are reduced to their human readable
+Latitude and longitude are read from the record itself (units) or from the nested `GeneralAddress`, `Address` or `Location`
+object (calls for service), and both the `Latitude`/`Longitude` and `Lat`/`Lon` spellings are accepted.
+
+Calls for service that carry an address but no coordinates are geocoded via the CloudTAK Search API
+(`GET /api/search/suggest` then `GET /api/search/forward`) - this requires the `search:read` permission. When a `BoundingBox`
+is configured its centre is used to bias the search and any result outside of the box is rejected. Records that still have no
+acceptable coordinates are placed at `FallbackCoordinates` if configured, otherwise they are skipped. Dropdown values - `{ UniqueIdentifier, Description, Code }` - are reduced to their human readable
 description for the CoT remarks.
 
-This ETL is read-only. It never creates, updates, or deletes records in the agency's CAD system.
+This ETL is read-only against CentralSquare. It never creates, updates, or deletes records in the agency's CAD system.
+
+### CloudTAK Permissions
+
+| Permission | Required | Purpose |
+| ---------- | -------- | ------- |
+| `feature:*` | Yes | Post CAD call for service and unit locations to the map |
+| `event:create`, `event:read`, `event:update` | No | Create and modify CoreEvents for CAD calls for service |
+| `search:read` | No | Geocode call for service addresses that have no coordinates |
 
 ## Development
 
