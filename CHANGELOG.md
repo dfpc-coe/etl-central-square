@@ -12,6 +12,8 @@
 
 ### Pending Release
 
+### v1.1.0
+
 - :tada: Add optional `FallbackCoordinates` (`Latitude,Longitude`) used for records without coordinates
 
 ### v1.0.0
