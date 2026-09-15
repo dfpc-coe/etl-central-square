@@ -14,10 +14,6 @@ const DATA_TYPE_UNITS = 'Units';
 const SCHEMA_CAD_EVENT = 'CADEvent';
 const SCHEMA_CAD_UNIT = 'CADUnit';
 
-/**
- * The Input Schema contains the environment object that will be requested via the CloudTAK UI
- * It should be a valid TypeBox object - https://github.com/sinclairzx81/typebox
- */
 const InputSchema = Type.Object({
     BaseURL: Type.String({
         description: 'Base URL of the Pro Suite deployment - ie https://agency.centralsquarecloudgov.com'
