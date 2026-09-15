@@ -12,6 +12,8 @@
 
 ### Pending Release
 
+### v1.4.0
+
 - :tada: Expose `CADEvent` & `CADUnit` as named Output schemas via `@tak-ps/etl` Named Schema support - both are returned regardless of `DataType`
 - :arrow_up: `@tak-ps/etl@^10.18.0`
 
