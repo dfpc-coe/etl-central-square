@@ -12,6 +12,9 @@
 
 ### Pending Release
 
+- :tada: Expose `CADEvent` & `CADUnit` as named Output schemas via `@tak-ps/etl` Named Schema support - both are returned regardless of `DataType`
+- :arrow_up: `@tak-ps/etl@^10.18.0`
+
 ### v1.3.0
 
 - :tada: Geocode Calls for Service that have an address but no coordinates via the CloudTAK Search API

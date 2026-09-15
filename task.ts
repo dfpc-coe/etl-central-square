@@ -1,6 +1,6 @@
 import type { Static, TSchema } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
-import type { Event } from '@tak-ps/etl';
+import type { Event, NamedSchema } from '@tak-ps/etl';
 import { Feature } from '@tak-ps/node-cot'
 import ETL, { SchemaType, handler as internal, local, DataFlowType, InvocationType } from '@tak-ps/etl';
 
@@ -10,6 +10,9 @@ const Nullable = <T extends TSchema>(type: T) => Type.Union([Type.Null(), type])
 
 const DATA_TYPE_CFS = 'Calls for Service';
 const DATA_TYPE_UNITS = 'Units';
+
+const SCHEMA_CAD_EVENT = 'CADEvent';
+const SCHEMA_CAD_UNIT = 'CADUnit';
 
 /**
  * The Input Schema contains the environment object that will be requested via the CloudTAK UI
@@ -81,7 +84,7 @@ const CADIncidentCode = Type.Object({
  * these fields - everything is optional so a single missing or agency specific
  * value never discards an otherwise usable call
  */
-const CFSCore = Type.Object({
+const CADEvent = Type.Object({
     CFSNumber: Type.Optional(Nullable(Type.String())),
     ExternalCFSNumber: Type.Optional(Nullable(Type.String())),
     CallDateTime: Type.Optional(Nullable(Type.String())),
@@ -375,13 +378,15 @@ export default class Task extends ETL {
     async schema(
         type: SchemaType = SchemaType.Input,
         flow: DataFlowType = DataFlowType.Incoming
-    ): Promise<TSchema> {
+    ): Promise<TSchema | Array<NamedSchema>> {
         if (flow === DataFlowType.Incoming) {
             if (type === SchemaType.Input) {
                 return InputSchema;
             } else {
-                const env = await this.env(InputSchema);
-                return env.DataType === DATA_TYPE_UNITS ? CADUnit : CFSCore;
+                return [
+                    { id: SCHEMA_CAD_EVENT, schema: CADEvent },
+                    { id: SCHEMA_CAD_UNIT, schema: CADUnit }
+                ];
             }
         } else {
             return Type.Object({});
@@ -632,10 +637,10 @@ export default class Task extends ETL {
 
         if (!number) return null;
 
-        let cfs: Static<typeof CFSCore>;
+        let cfs: Static<typeof CADEvent>;
 
         try {
-            cfs = this.type(CFSCore, record);
+            cfs = this.type(CADEvent, record);
         } catch (err) {
             console.error(`not ok - skipping CFS ${number}: ${err instanceof Error ? err.message : String(err)}`);
             return null;

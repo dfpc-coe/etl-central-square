@@ -29,6 +29,9 @@
 A single layer posts either calls for service or unit locations. To bring both into TAK, configure two layers against the same
 credentials - one with `DataType: Calls for Service` and one with `DataType: Units`.
 
+The task exposes two named Output schemas - `CADEvent` (calls for service) and `CADUnit` (AVL units) - select the schema
+matching the layer's `DataType` in the CloudTAK Layer Schema & Styles panels.
+
 ### Limitations
 
 - Accounts enforcing multi-factor authentication are not supported - the API service account must be exempt from MFA.
