@@ -12,6 +12,10 @@
 
 ### Pending Release
 
+### v1.5.0
+
+- :tada: Add `Agencies` input - an array of Dispatch Agency codes; records whose `DispatchAgency` does not match are discarded before submission
+
 ### v1.4.0
 
 - :tada: Expose `CADEvent` & `CADUnit` as named Output schemas via `@tak-ps/etl` Named Schema support - both are returned regardless of `DataType`

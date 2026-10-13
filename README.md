@@ -22,6 +22,7 @@
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
 | `DataType` | Yes | `Calls for Service` posts currently active CFS incident locations, `Units` posts AVL unit locations |
+| `Agencies` | No | Dispatch Agency codes to submit - ie `BVFD`, `KCCAMB`. Records from any other agency are discarded. Leave empty to submit every agency the API user can access |
 | `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
 | `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
@@ -35,8 +36,9 @@ matching the layer's `DataType` in the CloudTAK Layer Schema & Styles panels.
 ### Limitations
 
 - Accounts enforcing multi-factor authentication are not supported - the API service account must be exempt from MFA.
-- Results are not filtered by Dispatch Agency or Incident Code - scope the API user's permissions at the agency to limit
-  what is returned.
+- The `Agencies` filter is applied after the records are fetched - every active record the API user can access is still
+  returned by Pro Suite. Scope the API user's permissions at the agency to limit what is returned. Results are not
+  filtered by Incident Code.
 - Calls for Service are limited to currently active calls.
 
 ## How it Works
@@ -53,6 +55,9 @@ access. The Bearer token is therefore cached in the layer's ephemeral store and 
 
 Every request carries the required `From` header so the agency can attribute API activity to this integration in the Pro Suite
 audit trail.
+
+When `Agencies` is configured each record's `DispatchAgency` (or `Agency`) dropdown is compared, case insensitively, against
+the configured codes by its `Code`, `Abbreviation` and `Description` values and non-matching records are skipped.
 
 Latitude and longitude are read from the record itself (units) or from the nested `GeneralAddress`, `Address` or `Location`
 object (calls for service), and both the `Latitude`/`Longitude` and `Lat`/`Lon` spellings are accepted.

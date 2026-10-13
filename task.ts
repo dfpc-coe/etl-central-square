@@ -32,6 +32,10 @@ const InputSchema = Type.Object({
         enum: [DATA_TYPE_CFS, DATA_TYPE_UNITS],
         description: 'Calls for Service posts CFS incident locations, Units posts AVL unit locations'
     }),
+    Agencies: Type.Array(Type.String(), {
+        default: [],
+        description: 'Dispatch Agency codes to submit - ie BVFD, KCCAMB. Records from other agencies are discarded. Leave empty to submit every agency the API user can access'
+    }),
     BoundingBox: Type.Optional(Type.String({
         description: 'Bounding Box of acceptable geocoded locations as minLon,minLat,maxLon,maxLat - ie -105.4,39.5,-104.6,40.0. Geocoded results outside of this box are discarded'
     })),
@@ -275,6 +279,32 @@ function coordinates(record: Unknowns): [number, number] | null {
  * Records without a usable location are placed at the optional configured
  * fallback so the call or unit is still visible on the map
  */
+/**
+ * Agency codes configured on the layer, normalised for comparison
+ */
+function agencies(env: Static<typeof InputSchema>): Set<string> {
+    return new Set(env.Agencies.map((code) => code.trim().toUpperCase()).filter((code) => code.length));
+}
+
+/**
+ * A record is submitted when any of the Code, Abbreviation or Description values
+ * of its DispatchAgency (or Agency) dropdown matches a configured agency code
+ */
+function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
+    if (!allowed.size) return true;
+
+    for (const agency of [record.DispatchAgency, record.Agency]) {
+        if (!isObject(agency)) continue;
+
+        for (const key of ['Code', 'Abbreviation', 'Description']) {
+            const value = agency[key];
+            if (typeof value === 'string' && allowed.has(value.trim().toUpperCase())) return true;
+        }
+    }
+
+    return false;
+}
+
 function fallback(env: Static<typeof InputSchema>): [number, number] | null {
     if (!env.FallbackCoordinates) return null;
 
@@ -399,8 +429,16 @@ export default class Task extends ETL {
             features: []
         };
 
+        const allowed = agencies(env);
+        let filtered = 0;
+
         if (env.DataType === DATA_TYPE_UNITS) {
             for (const record of await this.controlSearch(env, base, '/units/search', 'units', {})) {
+                if (!allowedAgency(allowed, record)) {
+                    filtered++;
+                    continue;
+                }
+
                 const feat = this.controlUnit(env, record);
                 if (feat) fc.features.push(feat);
             }
@@ -408,9 +446,18 @@ export default class Task extends ETL {
             const geocoded = new Map<string, [number, number] | null>();
 
             for (const record of await this.controlSearch(env, base, '/cfs_core/search', 'cfs_cores', { CurrentlyActive: true })) {
+                if (!allowedAgency(allowed, record)) {
+                    filtered++;
+                    continue;
+                }
+
                 const feat = await this.controlCFS(env, record, geocoded);
                 if (feat) fc.features.push(feat);
             }
+        }
+
+        if (allowed.size) {
+            console.log(`ok - ${filtered} records discarded by Agencies filter (${[...allowed].join(', ')})`);
         }
 
         console.log(`ok - obtained ${fc.features.length} features`);
