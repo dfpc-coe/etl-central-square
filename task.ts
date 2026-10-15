@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import type { Static, TSchema } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
-import type { Event, NamedSchema } from '@tak-ps/etl';
+import type { Event, NamedSchema, CoreEvent, CoreEventUpdate, CoreEventAssignment } from '@tak-ps/etl';
 import { Feature } from '@tak-ps/node-cot'
 import ETL, { SchemaType, handler as internal, local, DataFlowType, InvocationType } from '@tak-ps/etl';
 
@@ -30,7 +31,7 @@ const InputSchema = Type.Object({
     DataType: Type.String({
         default: DATA_TYPE_CFS,
         enum: [DATA_TYPE_CFS, DATA_TYPE_UNITS],
-        description: 'Calls for Service posts CFS incident locations, Units posts AVL unit locations'
+        description: 'Calls for Service writes CFS incidents to CloudTAK Events with their Units as Assignments, Units posts AVL unit locations'
     }),
     Agencies: Type.Array(Type.String(), {
         default: [],
@@ -42,6 +43,11 @@ const InputSchema = Type.Object({
     FallbackCoordinates: Type.Optional(Type.String({
         description: 'Latitude,Longitude used for records without coordinates (and that could not be geocoded) - ie 39.7392,-104.9903'
     })),
+    ExpireHours: Type.Number({
+        default: 1,
+        minimum: 0.25,
+        description: 'Hours after the last poll at which a call for service Event ends on its own if this layer stops reporting - every poll of an active call pushes the expiry out again'
+    }),
     DEBUG: Type.Boolean({
         default: false,
         description: 'Print results in logs'
@@ -79,6 +85,12 @@ const CADIncidentCode = Type.Object({
     Code: Type.Optional(Nullable(Type.String()))
 });
 
+const CADUnitAssignment = Type.Object({
+    UnitID: Type.Optional(Nullable(Type.Union([Type.String(), Type.Number()]))),
+    Unit: Type.Optional(Nullable(CADDropdown)),
+    UnitStatus: Type.Optional(Nullable(CADDropdown))
+});
+
 /**
  * Pro Suite is configured per agency and the CFS record exposes a superset of
  * these fields - everything is optional so a single missing or agency specific
@@ -112,11 +124,7 @@ const CADEvent = Type.Object({
         ContactPhoneNumber: Type.Optional(Nullable(Type.String())),
         HowReported: Type.Optional(Nullable(CADDropdown))
     }))),
-    Units: Type.Optional(Nullable(Type.Array(Type.Object({
-        UnitID: Type.Optional(Nullable(Type.Union([Type.String(), Type.Number()]))),
-        Unit: Type.Optional(Nullable(CADDropdown)),
-        UnitStatus: Type.Optional(Nullable(CADDropdown))
-    }))))
+    Units: Type.Optional(Nullable(Type.Array(CADUnitAssignment)))
 });
 
 /**
@@ -170,6 +178,13 @@ const TokenResponse = Type.Object({
     expires_in: Type.Optional(Type.Integer())
 });
 
+/** CloudTAK Event ID, a digest of the last state written & the expiry last set, keyed by CFS number */
+const EventCache = Type.Record(Type.String(), Type.Object({
+    id: Type.String(),
+    hash: Type.String(),
+    expires: Type.Optional(Type.String())
+}));
+
 // Pro Suite tokens default to a 24 hour lifetime and the token endpoint is
 // aggressively rate limited - refresh early rather than on every call
 const TOKEN_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -182,7 +197,41 @@ const STALE_MINUTES = 20;
 // Required on every request and recorded in the Pro Suite audit trail
 const FROM_HEADER = 'CloudTAK-ETL';
 
+/** External ID system CFS numbers are filed under on CloudTAK Events */
+const EXTERNAL_SYSTEM = 'central-square';
+
+/** MIL-STD-2525E Incident symbol - the CloudTAK default for a new Event */
+const EVENT_SIDC = '10034000001100000000';
+
+/** Marks the Assignments this task manages so people added by users are left alone */
+const ASSIGNMENT_REMARKS = 'CentralSquare CAD Unit';
+
+const NAME_MAX_LENGTH = 64;
+
 type Unknowns = Record<string, unknown>;
+
+type Priority = NonNullable<CoreEventUpdate['priority']>;
+
+type Assignee = {
+    name: string;
+    role: string;
+};
+
+/** A Call for Service ready to be written to CloudTAK */
+type Call = {
+    number: string;
+    event: Required<Pick<CoreEventUpdate, 'name' | 'priority' | 'geometry' | 'location' | 'remarks' | 'metadata'>> & Pick<CoreEventUpdate, 'started'>;
+    units: Array<Assignee>;
+};
+
+type Counts = {
+    created: number;
+    updated: number;
+    extended: number;
+    unchanged: number;
+    ended: number;
+    failed: number;
+};
 
 function isObject(value: unknown): value is Unknowns {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -234,6 +283,28 @@ function primaryIncident(value: unknown): string | null {
     return describe(value);
 }
 
+/**
+ * CAD priorities are agency configured but near universally numbered with 1 as
+ * the most urgent - the first number found in the Level, Code or Description
+ * is mapped onto the CloudTAK scale, anything else is left unprioritised
+ */
+function priority(value: Static<typeof CADDropdown> | null | undefined): Priority {
+    if (!value) return 'none';
+
+    for (const candidate of [value.Level, value.Code, value.Description]) {
+        const match = String(candidate ?? '').match(/\d+/);
+        if (!match) continue;
+
+        const level = Number(match[0]);
+        if (level <= 1) return 'critical';
+        if (level === 2) return 'high';
+        if (level === 3) return 'medium';
+        return 'low';
+    }
+
+    return 'none';
+}
+
 function toCoordinate(value: unknown): number | null {
     if (value === null || value === undefined || value === '') return null;
     const num = Number(value);
@@ -276,10 +347,6 @@ function coordinates(record: Unknowns): [number, number] | null {
 }
 
 /**
- * Records without a usable location are placed at the optional configured
- * fallback so the call or unit is still visible on the map
- */
-/**
  * Agency codes configured on the layer, normalised for comparison
  */
 function agencies(env: Static<typeof InputSchema>): Set<string> {
@@ -305,6 +372,10 @@ function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
     return false;
 }
 
+/**
+ * Records without a usable location are placed at the optional configured
+ * fallback so the call or unit is still visible on the map
+ */
 function fallback(env: Static<typeof InputSchema>): [number, number] | null {
     if (!env.FallbackCoordinates) return null;
 
@@ -364,14 +435,54 @@ function addressLine(record: Unknowns): string | null {
 }
 
 function timestamp(value: unknown, fallback: Date): Date {
-    if (typeof value !== 'string' || !value.trim()) return fallback;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+    return parseTimestamp(value) ?? fallback;
 }
 
-function remarks(lines: Array<string | null>): string | undefined {
-    const body = lines.filter((line) => line !== null).join('\n');
-    return body || undefined;
+function parseTimestamp(value: unknown): Date | null {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function remarks(lines: Array<string | null>): string {
+    return lines.filter((line) => line !== null).join('\n');
+}
+
+function clampName(name: string): string {
+    return name.length > NAME_MAX_LENGTH ? `${name.slice(0, NAME_MAX_LENGTH - 1)}…` : name;
+}
+
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function digest(value: unknown): string {
+    return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function statusOf(err: unknown): number | null {
+    if (err instanceof Error && 'status' in err && typeof err.status === 'number') return err.status;
+    return null;
+}
+
+/**
+ * Units dispatched to a Call for Service become Assignments on the Event -
+ * one per unit, the latest status winning when a unit is listed twice
+ */
+function assignees(units: Static<typeof CADEvent>['Units']): Array<Assignee> {
+    const byName = new Map<string, Assignee>();
+
+    for (const unit of units ?? []) {
+        const name = describe(unit.Unit) ?? describe(unit.UnitID);
+        if (!name) continue;
+
+        byName.set(clampName(name), {
+            name: clampName(name),
+            role: describe(unit.UnitStatus) ?? ''
+        });
+    }
+
+    return [...byName.values()];
 }
 
 /**
@@ -424,6 +535,17 @@ export default class Task extends ETL {
 
         const base = new URL(env.BaseURL);
 
+        if (env.DataType === DATA_TYPE_UNITS) {
+            await this.controlUnits(env, base);
+        } else {
+            await this.controlCalls(env, base);
+        }
+    }
+
+    /**
+     * AVL unit locations are posted to the map as CoT
+     */
+    async controlUnits(env: Static<typeof InputSchema>, base: URL): Promise<void> {
         const fc: Static<typeof Feature.InputFeatureCollection> = {
             type: 'FeatureCollection',
             features: []
@@ -432,28 +554,14 @@ export default class Task extends ETL {
         const allowed = agencies(env);
         let filtered = 0;
 
-        if (env.DataType === DATA_TYPE_UNITS) {
-            for (const record of await this.controlSearch(env, base, '/units/search', 'units', {})) {
-                if (!allowedAgency(allowed, record)) {
-                    filtered++;
-                    continue;
-                }
-
-                const feat = this.controlUnit(env, record);
-                if (feat) fc.features.push(feat);
+        for (const record of await this.controlSearch(env, base, '/units/search', 'units', {})) {
+            if (!allowedAgency(allowed, record)) {
+                filtered++;
+                continue;
             }
-        } else {
-            const geocoded = new Map<string, [number, number] | null>();
 
-            for (const record of await this.controlSearch(env, base, '/cfs_core/search', 'cfs_cores', { CurrentlyActive: true })) {
-                if (!allowedAgency(allowed, record)) {
-                    filtered++;
-                    continue;
-                }
-
-                const feat = await this.controlCFS(env, record, geocoded);
-                if (feat) fc.features.push(feat);
-            }
+            const feat = this.controlUnit(env, record);
+            if (feat) fc.features.push(feat);
         }
 
         if (allowed.size) {
@@ -463,6 +571,197 @@ export default class Task extends ETL {
         console.log(`ok - obtained ${fc.features.length} features`);
 
         await this.submit(fc);
+    }
+
+    /**
+     * Active Calls for Service are written to CloudTAK Events - one per CFS
+     * number - with the units dispatched to each call as Assignments. Calls that
+     * are no longer active are ended
+     */
+    async controlCalls(env: Static<typeof InputSchema>, base: URL): Promise<void> {
+        const cache = await this.eventCache();
+        const seen = new Set<string>();
+        const counts: Counts = { created: 0, updated: 0, extended: 0, unchanged: 0, ended: 0, failed: 0 };
+
+        const allowed = agencies(env);
+        let filtered = 0;
+
+        const geocoded = new Map<string, [number, number] | null>();
+
+        for (const record of await this.controlSearch(env, base, '/cfs_core/search', 'cfs_cores', { CurrentlyActive: true })) {
+            if (!allowedAgency(allowed, record)) {
+                filtered++;
+                continue;
+            }
+
+            const call = await this.controlCFS(env, record, geocoded);
+            if (!call || seen.has(call.number)) continue;
+
+            seen.add(call.number);
+
+            try {
+                await this.syncCall(env, cache, call, counts);
+            } catch (err) {
+                counts.failed++;
+                console.error(`not ok - CFS ${call.number}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+
+        for (const number of Object.keys(cache)) {
+            if (seen.has(number)) continue;
+
+            try {
+                await this.api.Event.update(cache[number].id, { active: false });
+                counts.ended++;
+            } catch (err) {
+                if (statusOf(err) !== 404) {
+                    counts.failed++;
+                    console.error(`not ok - CFS ${number} could not be ended: ${err instanceof Error ? err.message : String(err)}`);
+                    continue;
+                }
+            }
+
+            delete cache[number];
+        }
+
+        await this.patchEphemeral({ events: cache });
+
+        if (allowed.size) {
+            console.log(`ok - ${filtered} records discarded by Agencies filter (${[...allowed].join(', ')})`);
+        }
+
+        console.log(`ok - ${seen.size} active calls: ${counts.created} created, ${counts.updated} updated, ${counts.extended} extended, ${counts.unchanged} unchanged, ${counts.ended} ended, ${counts.failed} failed`);
+    }
+
+    /**
+     * Create or update the Event for a call. Every write pushes the expiry out
+     * by ExpireHours so an Event ends on its own should this layer stop
+     * reporting - an unchanged call is only touched once half of that window
+     * has elapsed, otherwise it costs no API calls
+     */
+    async syncCall(env: Static<typeof InputSchema>, cache: Static<typeof EventCache>, call: Call, counts: Counts): Promise<void> {
+        const hash = digest({ event: call.event, units: call.units });
+
+        const now = Date.now();
+        const window = env.ExpireHours * 60 * 60 * 1000;
+        const ended = new Date(now + window).toISOString();
+
+        let cached: Static<typeof EventCache>[string] | undefined = cache[call.number];
+
+        if (!cached) {
+            const found = await this.findEvent(call.number);
+            if (found) cached = { id: found.id, hash: '' };
+        }
+
+        if (cached && cached.hash === hash) {
+            const expires = cached.expires ? new Date(cached.expires).getTime() : 0;
+
+            if (expires - now > window / 2) {
+                cache[call.number] = cached;
+                counts.unchanged++;
+                return;
+            }
+
+            try {
+                await this.api.Event.update(cached.id, { ended });
+                cache[call.number] = { ...cached, expires: ended };
+                counts.extended++;
+                return;
+            } catch (err) {
+                if (statusOf(err) !== 404) throw err;
+                cached = undefined;
+                delete cache[call.number];
+            }
+        }
+
+        let event: CoreEvent | null = null;
+
+        if (cached) {
+            try {
+                event = await this.api.Event.update(cached.id, { ...call.event, ended });
+            } catch (err) {
+                if (statusOf(err) !== 404) throw err;
+                delete cache[call.number];
+            }
+        }
+
+        if (event) {
+            await this.syncAssignments(event.id, call.units, (await this.api.Assignment.list(event.id, { limit: 100 })).items);
+            counts.updated++;
+        } else {
+            event = await this.api.Event.create({
+                ...call.event,
+                type: EVENT_SIDC,
+                external_id: { system: EXTERNAL_SYSTEM, value: call.number },
+                ended,
+                editable: true,
+                links: [],
+                missions: [],
+                style: {}
+            });
+
+            await this.syncAssignments(event.id, call.units, []);
+            counts.created++;
+        }
+
+        cache[call.number] = { id: event.id, hash, expires: ended };
+    }
+
+    /**
+     * Reconcile the Assignments this task manages on an Event with the units
+     * currently dispatched - people assigned by users are left untouched
+     */
+    async syncAssignments(event: string, units: Array<Assignee>, current: Array<CoreEventAssignment>): Promise<void> {
+        const managed = new Map(current.filter((a) => a.remarks === ASSIGNMENT_REMARKS).map((a) => [a.name, a]));
+
+        for (const unit of units) {
+            const existing = managed.get(unit.name);
+
+            if (!existing) {
+                await this.api.Assignment.create(event, { name: unit.name, role: unit.role, remarks: ASSIGNMENT_REMARKS });
+            } else {
+                managed.delete(unit.name);
+                if (existing.role !== unit.role) await this.api.Assignment.update(event, existing.id, { role: unit.role });
+            }
+        }
+
+        for (const stale of managed.values()) {
+            await this.api.Assignment.delete(event, stale.id);
+        }
+    }
+
+    /**
+     * Find the Event previously created for a CFS number when the cache has no
+     * record of it - the number is part of the Event name so the name filter
+     * narrows the candidates before the external ID is compared
+     */
+    async findEvent(number: string): Promise<CoreEvent | null> {
+        const list = await this.api.Event.list({ filter: escapeRegex(number).slice(0, 64), limit: 100 });
+
+        return list.items.find((item) => item.external_ids[EXTERNAL_SYSTEM] === number) ?? null;
+    }
+
+    async eventCache(): Promise<Static<typeof EventCache>> {
+        const layer = await this.fetchLayer();
+
+        try {
+            return this.type(EventCache, layer.incoming?.ephemeral.events ?? {});
+        } catch {
+            return {};
+        }
+    }
+
+    /**
+     * The ephemeral store is replaced on every write - merge so the cached
+     * token and the Event cache never clobber each other
+     */
+    async patchEphemeral(values: Record<string, unknown>): Promise<void> {
+        const layer = await this.fetchLayer();
+        const ephemeral = { ...(layer.incoming?.ephemeral ?? {}), ...values };
+
+        await this.setEphemeral(ephemeral);
+
+        if (layer.incoming) layer.incoming.ephemeral = ephemeral;
     }
 
     /**
@@ -517,7 +816,7 @@ export default class Task extends ETL {
         const lifetime = token.expires_in ? token.expires_in * 1000 : TOKEN_LIFETIME_MS;
         const margin = Math.min(TOKEN_REFRESH_MARGIN_MS, lifetime / 2);
 
-        await this.setEphemeral({
+        await this.patchEphemeral({
             access_token: token.access_token,
             access_token_expires: String(+new Date() + lifetime - margin)
         });
@@ -658,7 +957,7 @@ export default class Task extends ETL {
         env: Static<typeof InputSchema>,
         record: Unknowns,
         geocoded: Map<string, [number, number] | null> = new Map()
-    ): Promise<Static<typeof Feature.InputFeature> | null> {
+    ): Promise<Call | null> {
         const number = describe(record.CFSNumber) ?? describe(record.ExternalCFSNumber);
 
         let geometry = coordinates(record);
@@ -689,33 +988,31 @@ export default class Task extends ETL {
             return null;
         }
 
-        const now = new Date();
-        const start = timestamp(cfs.CallDateTime ?? cfs.IncidentDateTime, now);
+        const start = parseTimestamp(cfs.CallDateTime ?? cfs.IncidentDateTime);
 
         const incident = primaryIncident(cfs.IncidentCode);
 
         return {
-            id: `central-square-cfs-${number}`,
-            type: 'Feature',
-            properties: {
-                callsign: incident ? `${incident} (${number})` : number,
-                type: 'a-f-G-U-i',
-                how: 'h-g-i-g-o',
-                time: start.toISOString(),
-                start: start.toISOString(),
-                stale: new Date(now.getTime() + STALE_MINUTES * 60 * 1000).toISOString(),
+            number,
+            event: {
+                name: clampName(incident ? `${incident} (${number})` : number),
+                priority: priority(cfs.Priority),
+                geometry: {
+                    type: 'Point',
+                    coordinates: geometry
+                },
+                location: addressLine(record) ?? '',
+                started: start?.toISOString(),
                 remarks: remarks([
                     `CFS: ${number}`,
                     incident ? `Incident: ${incident}` : null,
                     describe(cfs.CFSStatus) ? `Status: ${describe(cfs.CFSStatus)}` : null,
                     describe(cfs.Priority) ? `Priority: ${describe(cfs.Priority)}` : null,
-                    addressLine(record) ? `Address: ${addressLine(record)}` : null,
                     cfs.NearestCrossStreet ? `Cross Street: ${cfs.NearestCrossStreet}` : null,
                     cfs.NearestIntersection ? `Intersection: ${cfs.NearestIntersection}` : null,
                     describe(cfs.DispatchAgency) ? `Agency: ${describe(cfs.DispatchAgency)}` : null,
                     describe(cfs.Zone) ? `Zone: ${describe(cfs.Zone)}` : null,
                     describe(cfs.Beat) ? `Beat: ${describe(cfs.Beat)}` : null,
-                    describe(cfs.Units) ? `Units: ${describe(cfs.Units)}` : null,
                     describe(cfs.PrimaryOfficer) ? `Primary Officer: ${describe(cfs.PrimaryOfficer)}` : null,
                     describe(cfs.Reporter?.FreeformFullName) ? `Reporter: ${describe(cfs.Reporter?.FreeformFullName)}` : null,
                     describe(cfs.Reporter?.ContactPhoneNumber ?? cfs.Reporter?.FromPhoneNumber) ? `Phone: ${describe(cfs.Reporter?.ContactPhoneNumber ?? cfs.Reporter?.FromPhoneNumber)}` : null,
@@ -724,10 +1021,7 @@ export default class Task extends ETL {
                 ]),
                 metadata: cfs
             },
-            geometry: {
-                type: 'Point',
-                coordinates: geometry
-            }
+            units: assignees(cfs.Units)
         };
     }
 
@@ -781,7 +1075,7 @@ export default class Task extends ETL {
                     unit.CFSNumber ? `CFS: ${unit.CFSNumber}` : null,
                     describe(unit.Personnel) ? `Personnel: ${describe(unit.Personnel)}` : null,
                     addressLine(record) ? `Location: ${addressLine(record)}` : null
-                ]),
+                ]) || undefined,
                 metadata: unit
             },
             geometry: {

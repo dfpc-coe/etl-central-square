@@ -21,17 +21,18 @@
 | `Username` | Yes | Pro Suite API user provisioned by the agency |
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
-| `DataType` | Yes | `Calls for Service` posts currently active CFS incident locations, `Units` posts AVL unit locations |
+| `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units as Assignments, `Units` posts AVL unit locations to the map |
 | `Agencies` | No | Dispatch Agency codes to submit - ie `BVFD`, `KCCAMB`. Records from any other agency are discarded. Leave empty to submit every agency the API user can access |
 | `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
 | `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
+| `ExpireHours` | No | Hours after the last poll at which a call for service Event ends on its own if the layer stops reporting - default `1` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
 
-A single layer posts either calls for service or unit locations. To bring both into TAK, configure two layers against the same
+A single layer handles either calls for service or unit locations. To bring both into TAK, configure two layers against the same
 credentials - one with `DataType: Calls for Service` and one with `DataType: Units`.
 
-The task exposes two named Output schemas - `CADEvent` (calls for service) and `CADUnit` (AVL units) - select the schema
-matching the layer's `DataType` in the CloudTAK Layer Schema & Styles panels.
+The task exposes two named Output schemas - `CADEvent` (calls for service, attached to each Event as metadata) and `CADUnit`
+(AVL units) - a `Units` layer selects `CADUnit` in the CloudTAK Layer Schema & Styles panels.
 
 ### Limitations
 
@@ -68,15 +69,44 @@ is configured its centre is used to bias the search and any result outside of th
 acceptable coordinates are placed at `FallbackCoordinates` if configured, otherwise they are skipped. Dropdown values - `{ UniqueIdentifier, Description, Code }` - are reduced to their human readable
 description for the CoT remarks.
 
+### Calls for Service as Events
+
+Each active call for service becomes a CloudTAK Event, filed under the `central-square` external ID system by its CFS number:
+
+| Event field | Source |
+| ----------- | ------ |
+| Name | Primary incident description and CFS number - ie `Structure Fire (2026-001234)` |
+| Type | MIL-STD-2525E Incident (`10034000001100000000`) |
+| Priority | First number of the CAD `Priority` level, code or description - `1` is `critical`, `2` `high`, `3` `medium`, `4` and above `low`, anything else `none` |
+| Location | Free form address of the call |
+| Started | `CallDateTime`, falling back to `IncidentDateTime` |
+| Remarks | Status, priority, cross street, agency, zone, beat, officer, reporter, disposition and caution flag |
+| Metadata | The full `CADEvent` record |
+| Ended | `ExpireHours` after the latest poll - the Event ends on its own if this layer stops reporting |
+| Channels | Inherited from the Connection the layer belongs to |
+
+The units dispatched to a call are reconciled as Assignments on its Event - one per unit named after the unit, with the unit
+status as its role. Only Assignments carrying the `CentralSquare CAD Unit` remark are managed, so people assigned to the Event
+by users are never modified or removed.
+
+The Event ID, a digest of the last state written and the expiry last set are cached per CFS number in the layer's ephemeral
+store. A changed call is updated in place and its expiry pushed out by `ExpireHours`. An unchanged call costs no CloudTAK API
+calls until half of that window has elapsed, at which point only its expiry is pushed out again. A call that is no longer
+returned as active has its Event ended immediately. When the cache has no record of a call - the first run, or after the store was cleared - the Events
+visible to the layer are searched by CFS number before a new Event is created, so an Event is never duplicated.
+
 This ETL is read-only against CentralSquare. It never creates, updates, or deletes records in the agency's CAD system.
 
 ### CloudTAK Permissions
 
 | Permission | Required | Purpose |
 | ---------- | -------- | ------- |
-| `feature:*` | Yes | Post CAD call for service and unit locations to the map |
-| `event:create`, `event:read`, `event:update` | No | Create and modify CoreEvents for CAD calls for service |
+| `feature:*` | `Units` | Post AVL unit locations to the map |
+| `event:create`, `event:read`, `event:update` | `Calls for Service` | Create, look up, update and end the Event of each call for service |
+| `assignment:create`, `assignment:read`, `assignment:update`, `assignment:delete` | `Calls for Service` | Keep the units dispatched to a call in step with the Assignments of its Event |
 | `search:read` | No | Geocode call for service addresses that have no coordinates |
+
+Writing Events without naming Channels requires a CloudTAK release newer than 13.110.1 - earlier releases reject the Event create request.
 
 ## Development
 

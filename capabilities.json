@@ -1,7 +1,7 @@
 {
     "version": "1.0",
     "name": "CentralSquare",
-    "description": "Ingests CentralSquare Public Safety Suite Professional CAD data - calls for service locations and AVL unit locations - from the Pro Suite REST API and posts them to the map.",
+    "description": "Ingests CentralSquare Public Safety Suite Professional CAD data from the Pro Suite REST API - active calls for service are written to CloudTAK Events with their dispatched units as Assignments, AVL unit locations are posted to the map.",
     "compute": {
         "memory": 512,
         "timeout": 60
@@ -10,22 +10,42 @@
         {
             "resource": "feature:*",
             "required": true,
-            "description": "CentralSquare posts CAD call for service and unit locations to the map"
+            "description": "CentralSquare posts AVL unit locations to the map when DataType is Units"
         },
         {
             "resource": "event:create",
-            "required": false,
-            "description": "CentralSquare creates CoreEvents for CAD calls for service"
+            "required": true,
+            "description": "CentralSquare creates an Event for every active call for service"
         },
         {
             "resource": "event:read",
-            "required": false,
-            "description": "CentralSquare reads existing CoreEvents to avoid duplicating CAD calls for service"
+            "required": true,
+            "description": "CentralSquare looks up the Event previously created for a call for service when its cache has no record of it"
         },
         {
             "resource": "event:update",
-            "required": false,
-            "description": "CentralSquare modifies existing CoreEvents as CAD calls for service change"
+            "required": true,
+            "description": "CentralSquare updates Events as calls for service change and ends them when the call closes"
+        },
+        {
+            "resource": "assignment:create",
+            "required": true,
+            "description": "CentralSquare assigns the units dispatched to a call for service to its Event"
+        },
+        {
+            "resource": "assignment:read",
+            "required": true,
+            "description": "CentralSquare reads the Assignments of an Event to reconcile them with the units currently dispatched"
+        },
+        {
+            "resource": "assignment:update",
+            "required": true,
+            "description": "CentralSquare updates the role of an assigned unit as its status changes"
+        },
+        {
+            "resource": "assignment:delete",
+            "required": true,
+            "description": "CentralSquare removes units that are no longer dispatched to a call for service"
         },
         {
             "resource": "search:read",
