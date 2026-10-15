@@ -2,7 +2,7 @@
     "name": "coe-etl-central-square",
     "type": "module",
     "prviate": true,
-    "version": "1.6.0",
+    "version": "1.7.0",
     "description": "Bring CentralSquare Public Safety Suite Pro CAD locations into the TAK System",
     "main": "task.ts",
     "scripts": {
