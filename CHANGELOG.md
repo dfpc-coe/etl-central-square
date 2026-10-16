@@ -18,7 +18,7 @@
 - :rocket: CAD `Priority` levels are mapped onto the Event priority scale and the address becomes the Event location
 - :rocket: The Event ID & a digest of the last state written are cached in the layer ephemeral store so unchanged calls cost no API calls; the Pro Suite token is merged into the same store
 - :tada: Add the `ExpireHours` input (default `1`) - every write sets the Event to end that far out so a call ends on its own if the layer stops reporting; unchanged calls have their expiry pushed out once half the window has elapsed
-- :arrow_up: `@tak-ps/etl@^10.24.0`
+- :arrow_up: `@tak-ps/etl@^10.24.1`
 
 ### v1.6.0
 
