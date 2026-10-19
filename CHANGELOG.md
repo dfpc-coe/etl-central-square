@@ -12,6 +12,10 @@
 
 ### Pending Release
 
+### v1.8.1
+
+- :bug: Filter out `Unknown` portions of an address which were resulting in poor quality geocodes
+
 ### v1.8.0
 
 - :tada: The dispatcher who took a call (`CallTaker`) is added to the Event Assignments under the `Call Taker` role

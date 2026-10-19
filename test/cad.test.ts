@@ -102,6 +102,15 @@ test('coordinates & addressLine', () => {
     assert.equal(addressLine(KCCSO), '610 COLORADO AVE, STRATTON, Colorado, 80836');
     assert.equal(addressLine({ Location: { FreeFormAddress: ' 1 Main St ' } }), '1 Main St');
     assert.equal(addressLine({ Address: { Community: 'Town', State: 'CO' } }), 'Town, CO');
+    assert.equal(addressLine({
+        Address: {
+            Street: '4817 PRAIRIE DOG LANE',
+            City: 'FLAGLER',
+            State: { UniqueIdentifier: 'UNK', Description: 'Unknown' },
+            Zip: 'N/A'
+        }
+    }), '4817 PRAIRIE DOG LANE, FLAGLER');
+    assert.equal(addressLine({ Address: { Street: 'Unknown', State: { Description: 'UNK' } } }), null);
     assert.equal(addressLine({}), null);
 });
 

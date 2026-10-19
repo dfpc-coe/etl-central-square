@@ -18,6 +18,7 @@ export type BBox = [number, number, number, number];
 const COORDINATE_CONTAINERS = ['GeneralAddress', 'Address', 'Location', 'IncidentAddress'];
 const LATITUDE_KEYS = ['Latitude', 'Lat'];
 const LONGITUDE_KEYS = ['Longitude', 'Lon', 'Long'];
+const PLACEHOLDERS = new Set(['unknown', 'unk', 'n/a', 'na', 'none', 'null', 'undefined']);
 
 /**
  * Reduce a Pro Suite dropdown object - { UniqueIdentifier, Description, Code } -
@@ -119,19 +120,29 @@ export function coordinates(record: Unknowns): Coordinate | null {
     return null;
 }
 
+/**
+ * CAD dropdowns commonly carry an "Unknown" entry which would otherwise be
+ * sent to the geocoder as a literal address component
+ */
+export function addressPart(value: unknown): string | null {
+    const part = describe(value);
+    if (part === null || PLACEHOLDERS.has(part.toLowerCase())) return null;
+    return part;
+}
+
 export function addressLine(record: Unknowns): string | null {
     for (const key of COORDINATE_CONTAINERS) {
         const container = record[key];
         if (!isObject(container)) continue;
 
-        const freeform = describe(container.FreeFormAddress);
+        const freeform = addressPart(container.FreeFormAddress);
         if (freeform) return freeform;
 
         const parts = [
-            describe(container.Street),
-            describe(container.City) ?? describe(container.Community),
-            describe(container.State),
-            describe(container.Zip)
+            addressPart(container.Street),
+            addressPart(container.City) ?? addressPart(container.Community),
+            addressPart(container.State),
+            addressPart(container.Zip)
         ].filter((part) => part !== null);
 
         if (parts.length) return parts.join(', ');
