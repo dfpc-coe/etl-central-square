@@ -12,6 +12,13 @@
 
 ### Pending Release
 
+### v1.8.0
+
+- :tada: The dispatcher who took a call (`CallTaker`) is added to the Event Assignments under the `Call Taker` role
+- :rocket: Split `task.ts` into control flow only - the Pro Suite client moves to `lib/central-square.ts`, CAD record parsing to `lib/cad.ts`, CloudTAK Search geocoding to `lib/geocode.ts` and Event reconciliation to `lib/events.ts` (the `EventSync` shared with `etl-active911`)
+- :rocket: A cache miss now resolves the existing Event through an index of the Events visible to the layer by external ID rather than an Event name filter, so a renamed Event is still found
+- :white_check_mark: Add unit tests for the Pro Suite client, pagination, token caching and CAD record parsing
+
 ### v1.7.0
 
 - :tada: `Calls for Service` are written directly to CloudTAK Events via the `@tak-ps/etl` SDK instead of being submitted as CoT - one Event per CFS number filed under the `central-square` external ID, with the dispatched Units reconciled as Event Assignments and the Event ended once the call is no longer active

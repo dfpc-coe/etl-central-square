@@ -21,7 +21,7 @@
 | `Username` | Yes | Pro Suite API user provisioned by the agency |
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
-| `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units as Assignments, `Units` posts AVL unit locations to the map |
+| `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units and call taker as Assignments, `Units` posts AVL unit locations to the map |
 | `Agencies` | No | Dispatch Agency codes to submit - ie `BVFD`, `KCCAMB`. Records from any other agency are discarded. Leave empty to submit every agency the API user can access |
 | `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
 | `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
@@ -86,8 +86,8 @@ Each active call for service becomes a CloudTAK Event, filed under the `central-
 | Channels | Inherited from the Connection the layer belongs to |
 
 The units dispatched to a call are reconciled as Assignments on its Event - one per unit named after the unit, with the unit
-status as its role. Only Assignments carrying the `CentralSquare CAD Unit` remark are managed, so people assigned to the Event
-by users are never modified or removed.
+status as its role - along with the dispatcher who took the call under the `Call Taker` role. Only Assignments carrying the
+`CentralSquare CAD Unit` remark are managed, so people assigned to the Event by users are never modified or removed.
 
 The Event ID, a digest of the last state written and the expiry last set are cached per CFS number in the layer's ephemeral
 store. A changed call is updated in place and its expiry pushed out by `ExpireHours`. An unchanged call costs no CloudTAK API
