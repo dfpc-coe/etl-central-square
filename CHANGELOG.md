@@ -12,6 +12,10 @@
 
 ### Pending Release
 
+### v1.8.2
+
+- :rocket: Show Primary Response Agency in remarks
+
 ### v1.8.1
 
 - :bug: Filter out `Unknown` portions of an address which were resulting in poor quality geocodes

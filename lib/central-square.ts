@@ -69,6 +69,7 @@ export const CADEvent = Type.Object({
     CurrentlyActive: Type.Optional(Nullable(Type.Boolean())),
     UseCaution: Type.Optional(Nullable(Type.Boolean())),
     DispatchAgency: Type.Optional(Nullable(CADDropdown)),
+    PrimaryResponseAgency: Type.Optional(Nullable(CADDropdown)),
     CFSStatus: Type.Optional(Nullable(CADDropdown)),
     Priority: Type.Optional(Nullable(CADDropdown)),
     Zone: Type.Optional(Nullable(CADDropdown)),

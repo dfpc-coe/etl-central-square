@@ -306,7 +306,7 @@ export function callOf(number: string, record: Unknowns, geometry: Coordinate): 
                 describe(cfs.Priority) ? `Priority: ${describe(cfs.Priority)}` : null,
                 cfs.NearestCrossStreet ? `Cross Street: ${cfs.NearestCrossStreet}` : null,
                 cfs.NearestIntersection ? `Intersection: ${cfs.NearestIntersection}` : null,
-                describe(cfs.DispatchAgency) ? `Agency: ${describe(cfs.DispatchAgency)}` : null,
+                describe(cfs.PrimaryResponseAgency) ? `Primary Response Agency: ${describe(cfs.PrimaryResponseAgency)}` : null,
                 describe(cfs.Zone) ? `Zone: ${describe(cfs.Zone)}` : null,
                 describe(cfs.Beat) ? `Beat: ${describe(cfs.Beat)}` : null,
                 describe(cfs.PrimaryOfficer) ? `Primary Officer: ${describe(cfs.PrimaryOfficer)}` : null,

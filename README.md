@@ -80,7 +80,7 @@ Each active call for service becomes a CloudTAK Event, filed under the `central-
 | Priority | First number of the CAD `Priority` level, code or description - `1` is `critical`, `2` `high`, `3` `medium`, `4` and above `low`, anything else `none` |
 | Location | Free form address of the call |
 | Started | `CallDateTime`, falling back to `IncidentDateTime` |
-| Remarks | Status, priority, cross street, agency, zone, beat, officer, reporter, disposition and caution flag |
+| Remarks | Status, priority, cross street, primary response agency, zone, beat, officer, reporter, disposition and caution flag |
 | Metadata | The full `CADEvent` record |
 | Ended | `ExpireHours` after the latest poll - the Event ends on its own if this layer stops reporting |
 | Channels | Inherited from the Connection the layer belongs to |

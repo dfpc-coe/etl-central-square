@@ -29,6 +29,12 @@ const KCCSO = {
         ORI: 'CO0320000',
         RunsDispatch: true
     },
+    PrimaryResponseAgency: {
+        UniqueIdentifier: 4,
+        Abbreviation: 'SVFD',
+        Name: 'STRATTON VOLUNTEER FIRE DEPARTMENT',
+        RunsDispatch: false
+    },
     Status: 'waiting',
     IncidentDateTime: '2026-10-16T21:57:59.448138Z',
     CallDateTime: '2026-10-16T21:57:59.448138Z',
@@ -176,7 +182,7 @@ test('callOf', () => {
         'CFS: CFS2612517',
         'Incident: Structure Fire',
         'Priority: Priority 2',
-        'Agency: KCCSO',
+        'Primary Response Agency: SVFD',
         'Phone: (719) 342-1675'
     ].join('\n'));
     assert.deepEqual(call.assignees, [{ name: 'K1', role: 'En Route' }, { name: 'K2', role: '' }, { name: 'COM8 - Duran, Rubi', role: 'Call Taker' }]);
