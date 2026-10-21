@@ -170,12 +170,13 @@ export function parseAgencies(codes: string[]): Set<string> {
 
 /**
  * A record is submitted when any of the Code, Abbreviation or Description values
- * of its DispatchAgency (or Agency) dropdown matches a configured agency code
+ * of its DispatchAgency, PrimaryResponseAgency or Agency dropdown matches a
+ * configured agency code
  */
 export function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
     if (!allowed.size) return true;
 
-    for (const agency of [record.DispatchAgency, record.Agency]) {
+    for (const agency of [record.DispatchAgency, record.PrimaryResponseAgency, record.Agency]) {
         if (!isObject(agency)) continue;
 
         for (const key of ['Code', 'Abbreviation', 'Description']) {

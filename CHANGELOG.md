@@ -12,6 +12,10 @@
 
 ### Pending Release
 
+### v1.8.3
+
+- :bug: The `Agencies` filter also matches `PrimaryResponseAgency` - calls dispatched by a consolidated dispatch centre on behalf of a configured agency were discarded
+
 ### v1.8.2
 
 - :rocket: Show Primary Response Agency in remarks

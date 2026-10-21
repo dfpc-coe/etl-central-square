@@ -128,7 +128,8 @@ test('agency filter', () => {
     assert.equal(allowedAgency(parseAgencies(['BVFD']), KCCSO), false);
     assert.equal(allowedAgency(parseAgencies(['BVFD']), { Agency: { Code: 'bvfd' } }), true);
     assert.equal(allowedAgency(parseAgencies(['BVFD']), { Agency: { Description: 'BVFD' } }), true);
-    assert.equal(allowedAgency(parseAgencies(['BVFD']), { PrimaryResponseAgency: { Abbreviation: 'BVFD' } }), false);
+    assert.equal(allowedAgency(parseAgencies(['BVFD']), { PrimaryResponseAgency: { Abbreviation: 'BVFD' } }), true);
+    assert.equal(allowedAgency(parseAgencies(['BVFD']), { DispatchAgency: { Code: 'KCCSO' }, PrimaryResponseAgency: { Code: 'BVFD' } }), true);
     assert.equal(allowedAgency(parseAgencies(['BVFD']), {}), false);
 });
 

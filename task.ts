@@ -53,7 +53,7 @@ const InputSchema = Type.Object({
     }),
     Agencies: Type.Array(Type.String(), {
         default: [],
-        description: 'Dispatch Agency codes to submit - ie BVFD, KCCAMB. Records from other agencies are discarded. Leave empty to submit every agency the API user can access'
+        description: 'Agency codes to submit - ie BVFD, KCCAMB. A record is kept when its Dispatch Agency or Primary Response Agency matches any code. Leave empty to submit every agency the API user can access'
     }),
     BoundingBox: Type.Optional(Type.String({
         description: 'Bounding Box of acceptable geocoded locations as minLon,minLat,maxLon,maxLat - ie -105.4,39.5,-104.6,40.0. Geocoded results outside of this box are discarded'
