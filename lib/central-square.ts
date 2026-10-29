@@ -49,10 +49,29 @@ export const CADIncidentCode = Type.Object({
     Code: Type.Optional(Nullable(Type.String()))
 });
 
+export const CADOperator = Type.Object({
+    Username: Type.Optional(Nullable(Type.String())),
+    CallSign: Type.Optional(Nullable(Type.String())),
+    FullDescription: Type.Optional(Nullable(Type.String())),
+    AgencyAbbreviation: Type.Optional(Nullable(Type.String()))
+});
+
+export const CADCommandLogEntry = Type.Object({
+    Timestamp: Type.Optional(Nullable(Type.String())),
+    Creator: Type.Optional(Nullable(CADOperator)),
+    UnitNumber: Type.Optional(Nullable(Type.String())),
+    Text: Type.Optional(Nullable(Type.String())),
+    Status: Type.Optional(Nullable(CADDropdown)),
+    Destination: Type.Optional(Nullable(Type.Union([Type.String(), CADDropdown]))),
+    Tag: Type.Optional(Nullable(Type.String()))
+});
+
 export const CADUnitAssignment = Type.Object({
     UnitID: Type.Optional(Nullable(Type.Union([Type.String(), Type.Number()]))),
     Unit: Type.Optional(Nullable(CADDropdown)),
-    UnitStatus: Type.Optional(Nullable(CADDropdown))
+    UnitStatus: Type.Optional(Nullable(CADDropdown)),
+    DispatchAgency: Type.Optional(Nullable(CADDropdown)),
+    Agency: Type.Optional(Nullable(CADDropdown))
 });
 
 /**
@@ -89,7 +108,8 @@ export const CADEvent = Type.Object({
         ContactPhoneNumber: Type.Optional(Nullable(Type.String())),
         HowReported: Type.Optional(Nullable(CADDropdown))
     }))),
-    Units: Type.Optional(Nullable(Type.Array(CADUnitAssignment)))
+    Units: Type.Optional(Nullable(Type.Array(CADUnitAssignment))),
+    CommandLog: Type.Optional(Nullable(Type.Array(CADCommandLogEntry)))
 });
 
 /**

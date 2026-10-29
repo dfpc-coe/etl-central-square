@@ -22,9 +22,10 @@
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
 | `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units and call taker as Assignments, `Units` posts AVL unit locations to the map |
-| `Agencies` | No | Agency codes to submit - ie `BVFD`, `KCCAMB`. A record is kept when its Dispatch Agency or Primary Response Agency matches any code. Leave empty to submit every agency the API user can access |
+| `Agencies` | No | Agency codes to submit - ie `BVFD`, `KCCAMB`. A record is kept when its Dispatch Agency, Primary Response Agency or the agency of any assigned unit matches any code. Leave empty to submit every agency the API user can access |
 | `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
 | `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
+| `CommandLog` | No | Append the CAD command log of each call for service to the Event remarks as a table - defaults to `true` |
 | `ExpireHours` | No | Hours after the last poll at which a call for service Event ends on its own if the layer stops reporting - default `1` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
 
@@ -60,7 +61,8 @@ audit trail.
 When `Agencies` is configured each record's `DispatchAgency`, `PrimaryResponseAgency` and `Agency` dropdowns are compared,
 case insensitively, against the configured codes by their `Code`, `Abbreviation` and `Description` values and a record is
 skipped when none of them match. In a consolidated dispatch centre `DispatchAgency` is the centre itself, so the
-responding agency is usually found in `PrimaryResponseAgency`.
+responding agency is usually found in `PrimaryResponseAgency`. A call is also kept when any unit in its `Units` array belongs
+to a configured agency, so a configured fire department assisting on a law enforcement call is still submitted.
 
 Latitude and longitude are read from the record itself (units) or from the nested `GeneralAddress`, `Address` or `Location`
 object (calls for service), and both the `Latitude`/`Longitude` and `Lat`/`Lon` spellings are accepted.
@@ -82,7 +84,7 @@ Each active call for service becomes a CloudTAK Event, filed under the `central-
 | Priority | First number of the CAD `Priority` level, code or description - `1` is `critical`, `2` `high`, `3` `medium`, `4` and above `low`, anything else `none` |
 | Location | Free form address of the call |
 | Started | `CallDateTime`, falling back to `IncidentDateTime` |
-| Remarks | Status, priority, cross street, primary response agency, zone, beat, officer, reporter, disposition and caution flag |
+| Remarks | Status, priority, cross street, primary response agency, zone, beat, officer, reporter, disposition and caution flag, followed by the CAD command log as a markdown table (time, unit, status, entry, operator call sign) unless `CommandLog` is disabled |
 | Metadata | The full `CADEvent` record |
 | Ended | `ExpireHours` after the latest poll - the Event ends on its own if this layer stops reporting |
 | Channels | Inherited from the Connection the layer belongs to |

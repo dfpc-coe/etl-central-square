@@ -12,6 +12,11 @@
 
 ### Pending Release
 
+### v1.9.0
+
+- :tada: The CAD `CommandLog` of each call for service is appended to the Event remarks as a markdown table - disable with the `CommandLog` input
+- :rocket: The `Agencies` filter also keeps calls where any assigned unit belongs to a configured agency - a non-primary agency assisting on another agency's call is no longer discarded
+
 ### v1.8.3
 
 - :bug: The `Agencies` filter also matches `PrimaryResponseAgency` - calls dispatched by a consolidated dispatch centre on behalf of a configured agency were discarded

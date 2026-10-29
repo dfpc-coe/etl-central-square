@@ -6,6 +6,7 @@ import {
     assignees,
     callOf,
     cfsNumber,
+    commandLog,
     coordinates,
     describe,
     parseAgencies,
@@ -65,8 +66,35 @@ const KCCSO = {
         { UnitID: 'K1', Unit: { Description: 'K1' }, UnitStatus: { Description: 'Dispatched' } },
         { UnitID: 'K1', Unit: { Description: 'K1' }, UnitStatus: { Description: 'En Route' } },
         { UnitID: 'K2', Unit: null, UnitStatus: null }
+    ],
+    CommandLog: [
+        {
+            Timestamp: '2026-10-28T12:21:42.206433Z',
+            Creator: { Username: 'jhernandez', CallSign: 'COM7', FullDescription: 'COM7 - Hernandez, Jaden', AgencyAbbreviation: 'KCCSO' },
+            UnitNumber: '',
+            Text: 'EMS IS TURNING DOWN | THE TRANSPORT\nSECOND LINE',
+            Status: null,
+            Destination: null,
+            Tag: 'log'
+        },
+        {
+            Timestamp: '2026-10-28T12:22:01.092485Z',
+            Creator: { Username: 'jhernandez', CallSign: 'COM7', FullDescription: 'COM7 - Hernandez, Jaden', AgencyAbbreviation: 'KCCSO' },
+            UnitNumber: 'KCC_AMB',
+            Text: 'ADVISED',
+            Status: { UniqueIdentifier: 23, Description: 'ADVISED', Abbreviation: 'ADV' },
+            Destination: null,
+            Tag: null
+        }
     ]
 };
+
+const COMMAND_LOG = [
+    '| Time | Unit | Status | Entry | By |',
+    '| --- | --- | --- | --- | --- |',
+    '| 2026-10-28T12:22:01Z | KCC_AMB | ADVISED | ADVISED | COM7 |',
+    '| 2026-10-28T12:21:42Z |  |  | EMS IS TURNING DOWN \\| THE TRANSPORT SECOND LINE | COM7 |'
+].join('\n');
 
 test('describe', () => {
     assert.equal(describe(null), null);
@@ -131,6 +159,24 @@ test('agency filter', () => {
     assert.equal(allowedAgency(parseAgencies(['BVFD']), { PrimaryResponseAgency: { Abbreviation: 'BVFD' } }), true);
     assert.equal(allowedAgency(parseAgencies(['BVFD']), { DispatchAgency: { Code: 'KCCSO' }, PrimaryResponseAgency: { Code: 'BVFD' } }), true);
     assert.equal(allowedAgency(parseAgencies(['BVFD']), {}), false);
+
+    assert.equal(allowedAgency(parseAgencies(['GJFD']), {
+        DispatchAgency: { Abbreviation: 'GJRCC' },
+        PrimaryResponseAgency: { Abbreviation: 'GJPD' },
+        Units: [
+            { UnitID: 'P1', Agency: { Abbreviation: 'GJPD' } },
+            { UnitID: 'E1', DispatchAgency: { Abbreviation: 'gjfd' } }
+        ]
+    }), true);
+    assert.equal(allowedAgency(parseAgencies(['GJFD']), {
+        PrimaryResponseAgency: { Abbreviation: 'GJPD' },
+        Units: [{ UnitID: 'E1', Unit: { Description: 'E1', Agency: { Code: 'GJFD' } } }]
+    }), true);
+    assert.equal(allowedAgency(parseAgencies(['GJFD']), {
+        PrimaryResponseAgency: { Abbreviation: 'GJPD' },
+        Units: [{ UnitID: 'P1', Agency: { Abbreviation: 'GJPD' } }, null, 'E1']
+    }), false);
+    assert.equal(allowedAgency(parseAgencies(['GJFD']), { PrimaryResponseAgency: { Abbreviation: 'GJPD' }, Units: null }), false);
 });
 
 test('parseFallback, parseBBox & within', () => {
@@ -169,6 +215,17 @@ test('cfsNumber, unitIdentifier & assignees', () => {
     assert.deepEqual(assignees({}), []);
 });
 
+test('commandLog', () => {
+    assert.equal(commandLog(null), null);
+    assert.equal(commandLog([]), null);
+    assert.equal(commandLog(KCCSO.CommandLog), COMMAND_LOG);
+    assert.equal(commandLog([{ Timestamp: 'garbage', Text: 'x', Creator: { Username: 'u' } }]), [
+        '| Time | Unit | Status | Entry | By |',
+        '| --- | --- | --- | --- | --- |',
+        '| garbage |  |  | x | u |'
+    ].join('\n'));
+});
+
 test('callOf', () => {
     const call = callOf('CFS2612517', KCCSO, [-102.6, 39.3]);
 
@@ -184,8 +241,13 @@ test('callOf', () => {
         'Incident: Structure Fire',
         'Priority: Priority 2',
         'Primary Response Agency: SVFD',
-        'Phone: (719) 342-1675'
+        'Phone: (719) 342-1675',
+        '',
+        'Command Log:',
+        '',
+        COMMAND_LOG
     ].join('\n'));
+    assert.equal(callOf('CFS2612517', KCCSO, [-102.6, 39.3], { commandLog: false }).event.remarks.includes('Command Log'), false);
     assert.deepEqual(call.assignees, [{ name: 'K1', role: 'En Route' }, { name: 'K2', role: '' }, { name: 'COM8 - Duran, Rubi', role: 'Call Taker' }]);
 
     // Only modelled fields are kept as metadata & the source record is untouched

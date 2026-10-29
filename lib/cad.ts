@@ -1,10 +1,11 @@
 import type { Static, TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { Feature } from '@tak-ps/node-cot';
-import { CADDropdown, CADEvent, CADUnit, isObject } from './central-square.js';
+import { CADCommandLogEntry, CADDropdown, CADEvent, CADUnit, isObject } from './central-square.js';
 import type { Unknowns } from './central-square.js';
 import { EventSync } from './events.js';
 import type { Assignee, Priority, SyncedCall } from './events.js';
+import { remarks, table } from './markdown.js';
 
 /** MIL-STD-2525E Incident symbol - the CloudTAK default for a new Event */
 export const EVENT_SIDC = '10034000001100000000';
@@ -157,8 +158,24 @@ export function parseTimestamp(value: unknown): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function remarks(lines: Array<string | null>): string {
-    return lines.filter((line) => line !== null).join('\n');
+/**
+ * The CAD command log as a markdown table, newest entry first
+ */
+export function commandLog(entries: Array<Static<typeof CADCommandLogEntry>> | null | undefined): string | null {
+    if (!entries?.length) return null;
+
+    const rows = entries
+        .map((entry) => ({ entry, time: parseTimestamp(entry.Timestamp) }))
+        .sort((a, b) => (b.time?.getTime() ?? 0) - (a.time?.getTime() ?? 0))
+        .map(({ entry, time }) => [
+            time ? time.toISOString().replace(/\.\d+Z$/, 'Z') : describe(entry.Timestamp),
+            describe(entry.UnitNumber),
+            describe(entry.Status),
+            describe(entry.Text),
+            describe(entry.Creator?.CallSign ?? entry.Creator?.FullDescription ?? entry.Creator?.Username)
+        ]);
+
+    return table(['Time', 'Unit', 'Status', 'Entry', 'By'], rows);
 }
 
 /**
@@ -168,24 +185,37 @@ export function parseAgencies(codes: string[]): Set<string> {
     return new Set(codes.map((code) => code.trim().toUpperCase()).filter((code) => code.length));
 }
 
+const AGENCY_KEYS = ['DispatchAgency', 'PrimaryResponseAgency', 'Agency'];
+
+function matchesAgency(allowed: Set<string>, agency: unknown): boolean {
+    if (!isObject(agency)) return false;
+
+    for (const key of ['Code', 'Abbreviation', 'Description']) {
+        const value = agency[key];
+        if (typeof value === 'string' && allowed.has(value.trim().toUpperCase())) return true;
+    }
+
+    return false;
+}
+
 /**
  * A record is submitted when any of the Code, Abbreviation or Description values
  * of its DispatchAgency, PrimaryResponseAgency or Agency dropdown matches a
- * configured agency code
+ * configured agency code, or when any unit assigned to the call belongs to a
+ * configured agency
  */
 export function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
     if (!allowed.size) return true;
 
-    for (const agency of [record.DispatchAgency, record.PrimaryResponseAgency, record.Agency]) {
-        if (!isObject(agency)) continue;
+    if (AGENCY_KEYS.some((key) => matchesAgency(allowed, record[key]))) return true;
 
-        for (const key of ['Code', 'Abbreviation', 'Description']) {
-            const value = agency[key];
-            if (typeof value === 'string' && allowed.has(value.trim().toUpperCase())) return true;
-        }
-    }
+    if (!Array.isArray(record.Units)) return false;
 
-    return false;
+    return record.Units.some((unit) => {
+        if (!isObject(unit)) return false;
+        if (AGENCY_KEYS.some((key) => matchesAgency(allowed, unit[key]))) return true;
+        return isObject(unit.Unit) && AGENCY_KEYS.some((key) => matchesAgency(allowed, (unit.Unit as Unknowns)[key]));
+    });
 }
 
 /**
@@ -278,12 +308,18 @@ export function assignees(cfs: Pick<Static<typeof CADEvent>, 'Units' | 'CallTake
     return [...byName.values()];
 }
 
+export type CallOptions = {
+    /** Append the CAD command log to the remarks as a markdown table - default true */
+    commandLog?: boolean;
+};
+
 /**
  * Map a Call for Service record to the Event written to CloudTAK - the record
  * is validated here and a malformed one throws
  */
-export function callOf(number: string, record: Unknowns, geometry: Coordinate): SyncedCall {
+export function callOf(number: string, record: Unknowns, geometry: Coordinate, opts: CallOptions = {}): SyncedCall {
     const cfs = parseRecord(CADEvent, record);
+    const log = opts.commandLog === false ? null : commandLog(cfs.CommandLog);
 
     const incident = primaryIncident(cfs.IncidentCode);
     const phone = cfs.Reporter?.ContactPhoneNumber ?? cfs.Reporter?.FromPhoneNumber;
@@ -314,7 +350,8 @@ export function callOf(number: string, record: Unknowns, geometry: Coordinate): 
                 describe(cfs.Reporter?.FreeformFullName) ? `Reporter: ${describe(cfs.Reporter?.FreeformFullName)}` : null,
                 describe(phone) ? `Phone: ${describe(phone)}` : null,
                 describe(cfs.Disposition) ? `Disposition: ${describe(cfs.Disposition)}` : null,
-                cfs.UseCaution ? 'Use Caution' : null
+                cfs.UseCaution ? 'Use Caution' : null,
+                log ? `\nCommand Log:\n\n${log}` : null
             ]),
             metadata: cfs
         },

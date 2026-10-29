@@ -53,7 +53,7 @@ const InputSchema = Type.Object({
     }),
     Agencies: Type.Array(Type.String(), {
         default: [],
-        description: 'Agency codes to submit - ie BVFD, KCCAMB. A record is kept when its Dispatch Agency or Primary Response Agency matches any code. Leave empty to submit every agency the API user can access'
+        description: 'Agency codes to submit - ie BVFD, KCCAMB. A record is kept when its Dispatch Agency, Primary Response Agency or the agency of any assigned unit matches any code. Leave empty to submit every agency the API user can access'
     }),
     BoundingBox: Type.Optional(Type.String({
         description: 'Bounding Box of acceptable geocoded locations as minLon,minLat,maxLon,maxLat - ie -105.4,39.5,-104.6,40.0. Geocoded results outside of this box are discarded'
@@ -61,6 +61,10 @@ const InputSchema = Type.Object({
     FallbackCoordinates: Type.Optional(Type.String({
         description: 'Latitude,Longitude used for records without coordinates (and that could not be geocoded) - ie 39.7392,-104.9903'
     })),
+    CommandLog: Type.Boolean({
+        default: true,
+        description: 'Append the CAD command log of each call for service to the Event remarks as a table'
+    }),
     ExpireHours: Type.Number({
         default: 1,
         minimum: 0.25,
@@ -209,7 +213,7 @@ export default class Task extends ETL {
             if (!geometry) continue;
 
             try {
-                await sync.sync(callOf(number, record, geometry));
+                await sync.sync(callOf(number, record, geometry, { commandLog: env.CommandLog }));
             } catch (err) {
                 console.error(`not ok - skipping CFS ${number}: ${err instanceof Error ? err.message : String(err)}`);
             }
