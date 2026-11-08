@@ -1,7 +1,7 @@
 {
     "version": "1.0",
     "name": "CentralSquare",
-    "description": "Ingests CentralSquare Public Safety Suite Professional CAD data from the Pro Suite REST API - active calls for service are written to CloudTAK Events with their dispatched units as Assignments, AVL unit locations are posted to the map.",
+    "description": "Ingests CentralSquare Public Safety Suite Professional CAD data from the Pro Suite REST API - active calls for service are written to CloudTAK Events with their dispatched units as Assignments and their command log on the Event Timeline, AVL unit locations are posted to the map.",
     "compute": {
         "memory": 512,
         "timeout": 60
@@ -46,6 +46,11 @@
             "resource": "assignment:delete",
             "required": true,
             "description": "CentralSquare removes units that are no longer dispatched to a call for service"
+        },
+        {
+            "resource": "timeline:create",
+            "required": false,
+            "description": "CentralSquare writes the CAD command log of each call for service to the Event Timeline when CommandLog is enabled"
         },
         {
             "resource": "search:read",

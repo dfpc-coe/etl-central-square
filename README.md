@@ -21,11 +21,11 @@
 | `Username` | Yes | Pro Suite API user provisioned by the agency |
 | `Password` | Yes | Password for the Pro Suite API user |
 | `Domain` | No | Active Directory domain - only required for agencies using LDAP authentication |
-| `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units and call taker as Assignments, `Units` posts AVL unit locations to the map |
+| `DataType` | Yes | `Calls for Service` writes currently active CFS incidents to CloudTAK Events with their dispatched units and call taker as Assignments and their command log on the Event Timeline, `Units` posts AVL unit locations to the map |
 | `Agencies` | No | Agency codes to submit - ie `BVFD`, `KCCAMB`. A record is kept when its Dispatch Agency, Primary Response Agency or the agency of any assigned unit matches any code. Leave empty to submit every agency the API user can access |
 | `BoundingBox` | No | `minLon,minLat,maxLon,maxLat` of acceptable geocoded locations - ie `-105.4,39.5,-104.6,40.0`. Geocoded results outside of the box are discarded |
 | `FallbackCoordinates` | No | `Latitude,Longitude` used for records that have no coordinates and could not be geocoded - ie `39.7392,-104.9903` |
-| `CommandLog` | No | Append the CAD command log of each call for service to the Event remarks as a table - defaults to `true` |
+| `CommandLog` | No | Write the CAD command log of each call for service to the Event Timeline - defaults to `true`, requires the `timeline:create` permission |
 | `ExpireHours` | No | Hours after the last poll at which a call for service Event ends on its own if the layer stops reporting - default `1` |
 | `DEBUG` | No | Print raw API responses in the layer logs |
 
@@ -57,6 +57,18 @@ access. The Bearer token is therefore cached in the layer's ephemeral store and 
 
 Every request carries the required `From` header so the agency can attribute API activity to this integration in the Pro Suite
 audit trail.
+
+### Command Log
+
+Each `CommandLog` entry of a call for service becomes a Timeline entry on its Event - a `unit` entry when the line concerns a
+unit (the unit and its status are kept in the entry metadata), a `status` entry for a status change without a unit and a
+`comment` otherwise. The dispatcher's call sign is the author and the CAD timestamp is the time the entry occurred.
+
+Pro Suite does not expose an identifier for a command log line, so each entry is keyed by an `external_id` derived from its
+timestamp, creator, unit, status, tag and text. The whole log is sent to CloudTAK's batch upsert whenever it differs from the
+log last written for that call, and CloudTAK updates entries already present on the Event in place - replaying the log never
+duplicates an entry and no per-entry state is kept in the layer's ephemeral store, only a digest of the last log written per
+active call. A line edited in CAD after the fact appears as a new entry beside the original.
 
 When `Agencies` is configured each record's `DispatchAgency`, `PrimaryResponseAgency` and `Agency` dropdowns are compared,
 case insensitively, against the configured codes by their `Code`, `Abbreviation` and `Description` values and a record is

@@ -7,6 +7,7 @@ import {
     callOf,
     cfsNumber,
     commandLog,
+    commandLogId,
     coordinates,
     describe,
     parseAgencies,
@@ -17,6 +18,7 @@ import {
     unitFeature,
     unitIdentifier,
     within,
+    COMMAND_LOG_PREFIX,
     EVENT_SIDC
 } from '../lib/cad.js';
 
@@ -88,13 +90,6 @@ const KCCSO = {
         }
     ]
 };
-
-const COMMAND_LOG = [
-    '| Time | Unit | Status | Entry | By |',
-    '| --- | --- | --- | --- | --- |',
-    '| 2026-10-28T12:22:01Z | KCC_AMB | ADVISED | ADVISED | COM7 |',
-    '| 2026-10-28T12:21:42Z |  |  | EMS IS TURNING DOWN \\| THE TRANSPORT SECOND LINE | COM7 |'
-].join('\n');
 
 test('describe', () => {
     assert.equal(describe(null), null);
@@ -215,15 +210,53 @@ test('cfsNumber, unitIdentifier & assignees', () => {
     assert.deepEqual(assignees({}), []);
 });
 
+test('commandLogId', () => {
+    const entry = KCCSO.CommandLog[1];
+
+    assert.match(commandLogId(entry), new RegExp(`^${COMMAND_LOG_PREFIX}[0-9a-f]{32}$`));
+    assert.equal(commandLogId(entry), commandLogId({ ...entry }));
+    assert.equal(commandLogId(entry), commandLogId({ ...entry, Creator: { ...entry.Creator, CallSign: 'COM9' } }));
+    assert.notEqual(commandLogId(entry), commandLogId({ ...entry, Text: 'EDITED' }));
+    assert.notEqual(commandLogId(entry), commandLogId({ ...entry, Timestamp: '2026-10-28T12:22:01.092486Z' }));
+    assert.notEqual(commandLogId(entry), commandLogId({ ...entry, UnitNumber: 'KCC_AMB2' }));
+    assert.notEqual(commandLogId(entry), commandLogId(KCCSO.CommandLog[0]));
+});
+
 test('commandLog', () => {
-    assert.equal(commandLog(null), null);
-    assert.equal(commandLog([]), null);
-    assert.equal(commandLog(KCCSO.CommandLog), COMMAND_LOG);
-    assert.equal(commandLog([{ Timestamp: 'garbage', Text: 'x', Creator: { Username: 'u' } }]), [
-        '| Time | Unit | Status | Entry | By |',
-        '| --- | --- | --- | --- | --- |',
-        '| garbage |  |  | x | u |'
-    ].join('\n'));
+    assert.deepEqual(commandLog(null), []);
+    assert.deepEqual(commandLog([]), []);
+
+    assert.deepEqual(commandLog(KCCSO.CommandLog), [{
+        type: 'comment',
+        occurred: '2026-10-28T12:21:42.206Z',
+        author: 'COM7',
+        body: 'EMS IS TURNING DOWN | THE TRANSPORT\nSECOND LINE',
+        metadata: { tag: 'log' },
+        external_id: commandLogId(KCCSO.CommandLog[0])
+    }, {
+        type: 'unit',
+        occurred: '2026-10-28T12:22:01.092Z',
+        author: 'COM7',
+        body: 'ADVISED',
+        metadata: { unit: 'KCC_AMB', status: 'ADVISED' },
+        external_id: commandLogId(KCCSO.CommandLog[1])
+    }]);
+
+    assert.deepEqual(commandLog([{ Timestamp: 'garbage', Text: 'x', Creator: { Username: 'u' } }]), [{
+        type: 'comment',
+        author: 'u',
+        body: 'x',
+        metadata: {},
+        external_id: commandLogId({ Timestamp: 'garbage', Text: 'x', Creator: { Username: 'u' } })
+    }]);
+
+    assert.deepEqual(commandLog([{ Status: { Description: 'CLOSED' }, Destination: 'HQ' }]), [{
+        type: 'status',
+        author: '',
+        body: 'CLOSED',
+        metadata: { status: 'CLOSED', destination: 'HQ' },
+        external_id: commandLogId({ Status: { Description: 'CLOSED' }, Destination: 'HQ' })
+    }]);
 });
 
 test('callOf', () => {
@@ -241,13 +274,10 @@ test('callOf', () => {
         'Incident: Structure Fire',
         'Priority: Priority 2',
         'Primary Response Agency: SVFD',
-        'Phone: (719) 342-1675',
-        '',
-        'Command Log:',
-        '',
-        COMMAND_LOG
+        'Phone: (719) 342-1675'
     ].join('\n'));
-    assert.equal(callOf('CFS2612517', KCCSO, [-102.6, 39.3], { commandLog: false }).event.remarks.includes('Command Log'), false);
+    assert.deepEqual(call.timeline, commandLog(KCCSO.CommandLog));
+    assert.equal('timeline' in callOf('CFS2612517', KCCSO, [-102.6, 39.3], { commandLog: false }), false);
     assert.deepEqual(call.assignees, [{ name: 'K1', role: 'En Route' }, { name: 'K2', role: '' }, { name: 'COM8 - Duran, Rubi', role: 'Call Taker' }]);
 
     // Only modelled fields are kept as metadata & the source record is untouched

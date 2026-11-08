@@ -63,7 +63,7 @@ const InputSchema = Type.Object({
     })),
     CommandLog: Type.Boolean({
         default: true,
-        description: 'Append the CAD command log of each call for service to the Event remarks as a table'
+        description: 'Write the CAD command log of each call for service to the Event Timeline - requires the timeline:create permission'
     }),
     ExpireHours: Type.Number({
         default: 1,
@@ -196,6 +196,11 @@ export default class Task extends ETL {
             debug: env.DEBUG
         });
 
+        const commandLog = env.CommandLog && await this.hasPermission('timeline:create');
+        if (env.CommandLog && !commandLog) {
+            console.error('not ok - CommandLog is enabled but this layer lacks the timeline:create permission - command logs will not be written');
+        }
+
         const allowed = parseAgencies(env.Agencies);
         const fallback = parseFallback(env.FallbackCoordinates);
         let filtered = 0;
@@ -213,7 +218,7 @@ export default class Task extends ETL {
             if (!geometry) continue;
 
             try {
-                await sync.sync(callOf(number, record, geometry, { commandLog: env.CommandLog }));
+                await sync.sync(callOf(number, record, geometry, { commandLog }));
             } catch (err) {
                 console.error(`not ok - skipping CFS ${number}: ${err instanceof Error ? err.message : String(err)}`);
             }

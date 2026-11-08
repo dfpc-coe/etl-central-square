@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto';
 import type { Static, TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
+import type { CoreEntityTimelineInput } from '@tak-ps/etl';
 import type { Feature } from '@tak-ps/node-cot';
 import { CADCommandLogEntry, CADDropdown, CADEvent, CADUnit, isObject } from './central-square.js';
 import type { Unknowns } from './central-square.js';
 import { EventSync } from './events.js';
 import type { Assignee, Priority, SyncedCall } from './events.js';
-import { remarks, table } from './markdown.js';
+import { remarks } from './markdown.js';
 
 /** MIL-STD-2525E Incident symbol - the CloudTAK default for a new Event */
 export const EVENT_SIDC = '10034000001100000000';
@@ -158,24 +160,56 @@ export function parseTimestamp(value: unknown): Date | null {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** External ID prefix of command log entries on the Event Timeline */
+export const COMMAND_LOG_PREFIX = 'commandlog:';
+
 /**
- * The CAD command log as a markdown table, newest entry first
+ * Pro Suite exposes no identifier for a command log entry, so one is derived
+ * from its content - the same entry replayed on every poll resolves to the same
+ * Timeline entry and CloudTAK updates it in place rather than adding another.
+ * An entry edited in CAD therefore appears as a new entry beside the original
  */
-export function commandLog(entries: Array<Static<typeof CADCommandLogEntry>> | null | undefined): string | null {
-    if (!entries?.length) return null;
+export function commandLogId(entry: Static<typeof CADCommandLogEntry>): string {
+    const digest = createHash('sha256').update(JSON.stringify([
+        entry.Timestamp ?? null,
+        entry.Creator?.Username ?? null,
+        entry.UnitNumber ?? null,
+        describe(entry.Status),
+        entry.Tag ?? null,
+        entry.Text ?? null
+    ])).digest('hex');
 
-    const rows = entries
-        .map((entry) => ({ entry, time: parseTimestamp(entry.Timestamp) }))
-        .sort((a, b) => (b.time?.getTime() ?? 0) - (a.time?.getTime() ?? 0))
-        .map(({ entry, time }) => [
-            time ? time.toISOString().replace(/\.\d+Z$/, 'Z') : describe(entry.Timestamp),
-            describe(entry.UnitNumber),
-            describe(entry.Status),
-            describe(entry.Text),
-            describe(entry.Creator?.CallSign ?? entry.Creator?.FullDescription ?? entry.Creator?.Username)
-        ]);
+    return `${COMMAND_LOG_PREFIX}${digest.slice(0, 32)}`;
+}
 
-    return table(['Time', 'Unit', 'Status', 'Entry', 'By'], rows);
+/**
+ * The CAD command log as Timeline entries - an entry about a unit is a `unit`
+ * entry carrying the unit & its status, a status without a unit is a `status`
+ * entry and anything else is a `comment`
+ */
+export function commandLog(entries: Array<Static<typeof CADCommandLogEntry>> | null | undefined): Array<CoreEntityTimelineInput> {
+    return (entries ?? []).map((entry): CoreEntityTimelineInput => {
+        const unit = describe(entry.UnitNumber);
+        const status = describe(entry.Status);
+        const destination = describe(entry.Destination);
+        const tag = describe(entry.Tag);
+        const occurred = parseTimestamp(entry.Timestamp)?.toISOString();
+
+        const metadata: Record<string, unknown> = {};
+        if (unit) metadata.unit = unit;
+        if (status) metadata.status = status;
+        if (destination) metadata.destination = destination;
+        if (tag) metadata.tag = tag;
+
+        return {
+            type: unit ? 'unit' : status ? 'status' : 'comment',
+            ...(occurred ? { occurred } : {}),
+            author: describe(entry.Creator?.CallSign ?? entry.Creator?.FullDescription ?? entry.Creator?.Username) ?? '',
+            body: describe(entry.Text) ?? status ?? '',
+            metadata,
+            external_id: commandLogId(entry)
+        };
+    });
 }
 
 /**
@@ -309,7 +343,7 @@ export function assignees(cfs: Pick<Static<typeof CADEvent>, 'Units' | 'CallTake
 }
 
 export type CallOptions = {
-    /** Append the CAD command log to the remarks as a markdown table - default true */
+    /** Write the CAD command log to the Event Timeline - default true */
     commandLog?: boolean;
 };
 
@@ -319,8 +353,6 @@ export type CallOptions = {
  */
 export function callOf(number: string, record: Unknowns, geometry: Coordinate, opts: CallOptions = {}): SyncedCall {
     const cfs = parseRecord(CADEvent, record);
-    const log = opts.commandLog === false ? null : commandLog(cfs.CommandLog);
-
     const incident = primaryIncident(cfs.IncidentCode);
     const phone = cfs.Reporter?.ContactPhoneNumber ?? cfs.Reporter?.FromPhoneNumber;
 
@@ -350,12 +382,12 @@ export function callOf(number: string, record: Unknowns, geometry: Coordinate, o
                 describe(cfs.Reporter?.FreeformFullName) ? `Reporter: ${describe(cfs.Reporter?.FreeformFullName)}` : null,
                 describe(phone) ? `Phone: ${describe(phone)}` : null,
                 describe(cfs.Disposition) ? `Disposition: ${describe(cfs.Disposition)}` : null,
-                cfs.UseCaution ? 'Use Caution' : null,
-                log ? `\nCommand Log:\n\n${log}` : null
+                cfs.UseCaution ? 'Use Caution' : null
             ]),
             metadata: cfs
         },
-        assignees: assignees(cfs)
+        assignees: assignees(cfs),
+        ...(opts.commandLog === false ? {} : { timeline: commandLog(cfs.CommandLog) })
     };
 }
 

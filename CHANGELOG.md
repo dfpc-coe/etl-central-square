@@ -10,11 +10,16 @@
 
 ## Version History
 
+### Pending Release
+
+### v1.11.0  - 2026-11-08
+
+- :tada: The CAD `CommandLog` of each call for service is written to the Event Timeline as `unit`, `status` and `comment` entries instead of a table in the remarks - each entry carries a content-derived `external_id` so CloudTAK upserts it in place and a poll never duplicates an entry, nothing is cached per entry. Requires the new `timeline:create` permission, which the `CommandLog` input is gated on
+- :arrow_up: `@tak-ps/etl` 11.2.0 for `api.Timeline`
+
 ### v1.10.0
 
 - :arrow_up: Update Core Dependencies
-
-### Pending Release
 
 ### v1.9.0
 

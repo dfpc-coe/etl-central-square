@@ -6,14 +6,19 @@ import type {
     CoreEvent,
     CoreEventCreate,
     CoreEventUpdate,
-    CoreEventAssignment
+    CoreEventAssignment,
+    CoreEntityTimelineInput
 } from '@tak-ps/etl';
 
-/** CloudTAK Event ID, a digest of the last state written & the expiry last set, keyed by external ID */
+/** Most entries CloudTAK accepts in one Timeline upsert */
+const TIMELINE_UPSERT_MAX = 1000;
+
+/** CloudTAK Event ID, digests of the last state & Timeline written and the expiry last set, keyed by external ID */
 export const EventCache = Type.Record(Type.String(), Type.Object({
     id: Type.String(),
     hash: Type.String(),
-    expires: Type.Optional(Type.String())
+    expires: Type.Optional(Type.String()),
+    timeline: Type.Optional(Type.String())
 }));
 
 export type EventCache = Static<typeof EventCache>;
@@ -33,6 +38,8 @@ export type SyncedCall = {
     assignees: Array<Assignee>;
     /** A fixed time the Event ends - set when the source never closes a record, otherwise the expiry is extended on every write */
     ended?: string;
+    /** The record's full Timeline, every entry keyed by `external_id` - upserted whenever it differs from the last written */
+    timeline?: Array<CoreEntityTimelineInput>;
 };
 
 export type Counts = {
@@ -42,6 +49,7 @@ export type Counts = {
     unchanged: number;
     ended: number;
     failed: number;
+    entries: number;
 };
 
 export type EventSyncOptions = {
@@ -64,7 +72,7 @@ export class EventSync {
     api: CloudTAKAPI;
     cache: EventCache;
     opts: EventSyncOptions;
-    counts: Counts = { created: 0, updated: 0, extended: 0, unchanged: 0, ended: 0, failed: 0 };
+    counts: Counts = { created: 0, updated: 0, extended: 0, unchanged: 0, ended: 0, failed: 0, entries: 0 };
     seen = new Set<string>();
 
     static NAME_MAX_LENGTH = 64;
@@ -182,11 +190,12 @@ export class EventSync {
 
     summary(): string {
         const c = this.counts;
-        return `${this.seen.size} records: ${c.created} created, ${c.updated} updated, ${c.extended} extended, ${c.unchanged} unchanged, ${c.ended} ended, ${c.failed} failed`;
+        return `${this.seen.size} records: ${c.created} created, ${c.updated} updated, ${c.extended} extended, ${c.unchanged} unchanged, ${c.ended} ended, ${c.failed} failed, ${c.entries} timeline entries`;
     }
 
     private async write(call: SyncedCall): Promise<void> {
         const hash = EventSync.digest({ event: call.event, assignees: call.assignees, ended: call.ended });
+        const timeline = call.timeline ? EventSync.digest(call.timeline) : undefined;
 
         const now = Date.now();
         const window = !call.ended && this.opts.expireHours ? this.opts.expireHours * 60 * 60 * 1000 : 0;
@@ -202,16 +211,17 @@ export class EventSync {
         if (cached && cached.hash === hash) {
             const expires = cached.expires ? new Date(cached.expires).getTime() : 0;
 
-            if (!window || expires - now > window / 2) {
-                this.cache[call.external] = cached;
-                this.counts.unchanged++;
-                return;
-            }
-
             try {
-                await this.api.Event.update(cached.id, { ended });
-                this.cache[call.external] = { ...cached, expires: ended };
-                this.counts.extended++;
+                if (!window || expires - now > window / 2) {
+                    this.counts.unchanged++;
+                } else {
+                    await this.api.Event.update(cached.id, { ended });
+                    cached = { ...cached, expires: ended };
+                    this.counts.extended++;
+                }
+
+                this.cache[call.external] = cached;
+                await this.log(call, timeline);
                 return;
             } catch (err) {
                 if (EventSync.statusOf(err) !== 404) throw err;
@@ -250,6 +260,26 @@ export class EventSync {
         }
 
         this.cache[call.external] = { id: event.id, hash, expires: ended };
+        await this.log(call, timeline);
+    }
+
+    /**
+     * Replay the record's Timeline onto its Event when it differs from the one
+     * last written - CloudTAK upserts by `external_id`, so entries already on
+     * the Event are updated in place rather than duplicated and no per-entry
+     * state is kept here, only the digest of the last log written
+     */
+    private async log(call: SyncedCall, hash: string | undefined): Promise<void> {
+        const cached = this.cache[call.external];
+        if (!call.timeline || !cached || cached.timeline === hash) return;
+
+        for (let i = 0; i < call.timeline.length; i += TIMELINE_UPSERT_MAX) {
+            const chunk = call.timeline.slice(i, i + TIMELINE_UPSERT_MAX);
+            await this.api.Timeline.upsert(cached.id, chunk);
+            this.counts.entries += chunk.length;
+        }
+
+        this.cache[call.external] = { ...cached, timeline: hash };
     }
 
     /**
