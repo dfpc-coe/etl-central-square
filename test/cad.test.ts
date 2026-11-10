@@ -172,6 +172,20 @@ test('agency filter', () => {
         Units: [{ UnitID: 'P1', Agency: { Abbreviation: 'GJPD' } }, null, 'E1']
     }), false);
     assert.equal(allowedAgency(parseAgencies(['GJFD']), { PrimaryResponseAgency: { Abbreviation: 'GJPD' }, Units: null }), false);
+
+    const assisted = {
+        DispatchAgency: { Abbreviation: 'KCCSO' },
+        PrimaryResponseAgency: { Abbreviation: 'KCCSO' },
+        Unit: [
+            { UnitNumber: 'KCCSO', Agency: { Abbreviation: 'KCCSO', Name: "KIT CARSON COUNTY SHERIFF'S OFFICE" } },
+            { UnitNumber: 'KCC_AMB', Agency: { Abbreviation: 'KCCAMB', Name: 'KIT CARSON COUNTY AMBULANCE' } },
+            { UnitNumber: 'BF1', Agency: { Abbreviation: 'BVFD', Name: 'BURLINGTON FIRE DEPARTMENT' } }
+        ]
+    };
+    assert.equal(allowedAgency(parseAgencies(['BVFD']), assisted), true);
+    assert.equal(allowedAgency(parseAgencies(['kccamb']), assisted), true);
+    assert.equal(allowedAgency(parseAgencies(['Burlington Fire Department']), assisted), true);
+    assert.equal(allowedAgency(parseAgencies(['SVFD']), assisted), false);
 });
 
 test('parseFallback, parseBBox & within', () => {
@@ -207,6 +221,19 @@ test('cfsNumber, unitIdentifier & assignees', () => {
     ]);
     assert.deepEqual(assignees({ Units: null, CallTaker: { Description: 'Dispatcher' } }), [{ name: 'Dispatcher', role: 'Call Taker' }]);
     assert.deepEqual(assignees({ Units: [{ UnitID: 'K1', UnitStatus: { Description: 'On Scene' } }], CallTaker: { Description: 'K1' } }), [{ name: 'K1', role: 'On Scene' }]);
+    assert.deepEqual(assignees({
+        Unit: [{ UnitNumber: 'KCC_AMB' }, { UnitNumber: 'BF1' }, { UnitNumber: 'C7' }],
+        CommandLog: [
+            { Timestamp: '2026-11-10T17:08:52.767411Z', UnitNumber: 'BF1', Text: 'ADVISED', Status: { Description: 'ADVISED' } },
+            { Timestamp: '2026-11-10T16:58:42.931792Z', UnitNumber: 'KCC_AMB', Text: 'ADVISED', Status: { Description: 'ADVISED' } },
+            { Timestamp: '2026-11-10T16:59:42.931792Z', UnitNumber: 'KCC_AMB', Text: '10-23', Status: { Description: 'On Scene' } },
+            { Timestamp: '2026-11-10T16:58:23.332172Z', UnitNumber: '', Text: 'TESTING COTAK', Status: null }
+        ]
+    }), [
+        { name: 'KCC_AMB', role: 'On Scene' },
+        { name: 'BF1', role: 'ADVISED' },
+        { name: 'C7', role: '' }
+    ]);
     assert.deepEqual(assignees({}), []);
 });
 
@@ -272,6 +299,7 @@ test('callOf', () => {
     assert.equal(call.event.remarks, [
         'CFS: CFS2612517',
         'Incident: Structure Fire',
+        'Status: waiting',
         'Priority: Priority 2',
         'Primary Response Agency: SVFD',
         'Phone: (719) 342-1675'
@@ -283,7 +311,8 @@ test('callOf', () => {
     // Only modelled fields are kept as metadata & the source record is untouched
     const metadata = call.event.metadata as Record<string, unknown>;
     assert.equal(metadata.CFSNumber, 'CFS2612517');
-    assert.equal('Status' in metadata, false);
+    assert.equal(metadata.Status, 'waiting');
+    assert.equal('Last' in (metadata.Reporter as Record<string, unknown>), false);
     assert.equal('CrossStreetOne' in (metadata.Address as Record<string, unknown>), false);
     assert.equal(KCCSO.Status, 'waiting');
 

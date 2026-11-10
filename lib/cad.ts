@@ -224,7 +224,7 @@ const AGENCY_KEYS = ['DispatchAgency', 'PrimaryResponseAgency', 'Agency'];
 function matchesAgency(allowed: Set<string>, agency: unknown): boolean {
     if (!isObject(agency)) return false;
 
-    for (const key of ['Code', 'Abbreviation', 'Description']) {
+    for (const key of ['Code', 'Abbreviation', 'Description', 'Name']) {
         const value = agency[key];
         if (typeof value === 'string' && allowed.has(value.trim().toUpperCase())) return true;
     }
@@ -232,8 +232,10 @@ function matchesAgency(allowed: Set<string>, agency: unknown): boolean {
     return false;
 }
 
+const UNIT_KEYS = ['Unit', 'Units'];
+
 /**
- * A record is submitted when any of the Code, Abbreviation or Description values
+ * A record is submitted when any of the Code, Abbreviation, Description or Name values
  * of its DispatchAgency, PrimaryResponseAgency or Agency dropdown matches a
  * configured agency code, or when any unit assigned to the call belongs to a
  * configured agency
@@ -243,12 +245,15 @@ export function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
 
     if (AGENCY_KEYS.some((key) => matchesAgency(allowed, record[key]))) return true;
 
-    if (!Array.isArray(record.Units)) return false;
+    return UNIT_KEYS.some((list) => {
+        const units = record[list];
+        if (!Array.isArray(units)) return false;
 
-    return record.Units.some((unit) => {
-        if (!isObject(unit)) return false;
-        if (AGENCY_KEYS.some((key) => matchesAgency(allowed, unit[key]))) return true;
-        return isObject(unit.Unit) && AGENCY_KEYS.some((key) => matchesAgency(allowed, (unit.Unit as Unknowns)[key]));
+        return units.some((unit) => {
+            if (!isObject(unit)) return false;
+            if (AGENCY_KEYS.some((key) => matchesAgency(allowed, unit[key]))) return true;
+            return isObject(unit.Unit) && AGENCY_KEYS.some((key) => matchesAgency(allowed, (unit.Unit as Unknowns)[key]));
+        });
     });
 }
 
@@ -313,20 +318,40 @@ export function unitIdentifier(record: Unknowns): string | null {
 export const CALL_TAKER_ROLE = 'Call Taker';
 
 /**
+ * The most recent command log status of each unit, keyed by UnitNumber
+ */
+export function unitStatuses(entries: Array<Static<typeof CADCommandLogEntry>> | null | undefined): Map<string, string> {
+    const latest = new Map<string, { status: string; at: number }>();
+
+    for (const entry of entries ?? []) {
+        const unit = describe(entry.UnitNumber);
+        const status = describe(entry.Status);
+        if (!unit || !status) continue;
+
+        const at = parseTimestamp(entry.Timestamp)?.getTime() ?? 0;
+        const known = latest.get(unit);
+        if (!known || at > known.at) latest.set(unit, { status, at });
+    }
+
+    return new Map([...latest].map(([unit, { status }]) => [unit, status]));
+}
+
+/**
  * Units dispatched to a Call for Service become Assignments on the Event -
  * one per unit, the latest status winning when a unit is listed twice - along
  * with the dispatcher who took the call
  */
-export function assignees(cfs: Pick<Static<typeof CADEvent>, 'Units' | 'CallTaker'>): Array<Assignee> {
+export function assignees(cfs: Pick<Static<typeof CADEvent>, 'Units' | 'Unit' | 'CallTaker' | 'CommandLog'>): Array<Assignee> {
     const byName = new Map<string, Assignee>();
+    const statuses = unitStatuses(cfs.CommandLog);
 
-    for (const unit of cfs.Units ?? []) {
-        const name = describe(unit.Unit) ?? describe(unit.UnitID);
+    for (const unit of [...(cfs.Units ?? []), ...(cfs.Unit ?? [])]) {
+        const name = describe(unit.UnitNumber) ?? describe(unit.Unit) ?? describe(unit.UnitID);
         if (!name) continue;
 
         byName.set(EventSync.clampName(name), {
             name: EventSync.clampName(name),
-            role: describe(unit.UnitStatus) ?? ''
+            role: describe(unit.UnitStatus) ?? statuses.get(name) ?? ''
         });
     }
 
@@ -371,7 +396,7 @@ export function callOf(number: string, record: Unknowns, geometry: Coordinate, o
             remarks: remarks([
                 `CFS: ${number}`,
                 incident ? `Incident: ${incident}` : null,
-                describe(cfs.CFSStatus) ? `Status: ${describe(cfs.CFSStatus)}` : null,
+                describe(cfs.CFSStatus ?? cfs.Status) ? `Status: ${describe(cfs.CFSStatus ?? cfs.Status)}` : null,
                 describe(cfs.Priority) ? `Priority: ${describe(cfs.Priority)}` : null,
                 cfs.NearestCrossStreet ? `Cross Street: ${cfs.NearestCrossStreet}` : null,
                 cfs.NearestIntersection ? `Intersection: ${cfs.NearestIntersection}` : null,

@@ -68,6 +68,10 @@ export const CADCommandLogEntry = Type.Object({
 
 export const CADUnitAssignment = Type.Object({
     UnitID: Type.Optional(Nullable(Type.Union([Type.String(), Type.Number()]))),
+    UnitNumber: Type.Optional(Nullable(Type.String())),
+    IsPrimary: Type.Optional(Nullable(Type.Boolean())),
+    UnitType: Type.Optional(Nullable(CADDropdown)),
+    Responder: Type.Optional(Nullable(CADOperator)),
     Unit: Type.Optional(Nullable(CADDropdown)),
     UnitStatus: Type.Optional(Nullable(CADDropdown)),
     DispatchAgency: Type.Optional(Nullable(CADDropdown)),
@@ -90,6 +94,7 @@ export const CADEvent = Type.Object({
     DispatchAgency: Type.Optional(Nullable(CADDropdown)),
     PrimaryResponseAgency: Type.Optional(Nullable(CADDropdown)),
     CFSStatus: Type.Optional(Nullable(CADDropdown)),
+    Status: Type.Optional(Nullable(Type.Union([Type.String(), CADDropdown]))),
     Priority: Type.Optional(Nullable(CADDropdown)),
     Zone: Type.Optional(Nullable(CADDropdown)),
     Beat: Type.Optional(Nullable(CADDropdown)),
@@ -109,6 +114,7 @@ export const CADEvent = Type.Object({
         HowReported: Type.Optional(Nullable(CADDropdown))
     }))),
     Units: Type.Optional(Nullable(Type.Array(CADUnitAssignment))),
+    Unit: Type.Optional(Nullable(Type.Array(CADUnitAssignment))),
     CommandLog: Type.Optional(Nullable(Type.Array(CADCommandLogEntry)))
 });
 

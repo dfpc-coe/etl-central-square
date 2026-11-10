@@ -71,10 +71,11 @@ duplicates an entry and no per-entry state is kept in the layer's ephemeral stor
 active call. A line edited in CAD after the fact appears as a new entry beside the original.
 
 When `Agencies` is configured each record's `DispatchAgency`, `PrimaryResponseAgency` and `Agency` dropdowns are compared,
-case insensitively, against the configured codes by their `Code`, `Abbreviation` and `Description` values and a record is
+case insensitively, against the configured codes by their `Code`, `Abbreviation`, `Description` and `Name` values and a record is
 skipped when none of them match. In a consolidated dispatch centre `DispatchAgency` is the centre itself, so the
-responding agency is usually found in `PrimaryResponseAgency`. A call is also kept when any unit in its `Units` array belongs
-to a configured agency, so a configured fire department assisting on a law enforcement call is still submitted.
+responding agency is usually found in `PrimaryResponseAgency`. A call is also kept when any unit in its `Unit` array belongs
+to a configured agency, so a configured fire department assisting on a law enforcement call is still submitted. Each of
+those units becomes an Assignment whose role is the unit's most recent status in the command log.
 
 Latitude and longitude are read from the record itself (units) or from the nested `GeneralAddress`, `Address` or `Location`
 object (calls for service), and both the `Latitude`/`Longitude` and `Lat`/`Lon` spellings are accepted.

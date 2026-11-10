@@ -12,6 +12,11 @@
 
 ### Pending Release
 
+### v1.12.0  - 2026-11-10
+
+- :bug: Units assigned to a call are read from the `Unit` array Pro Suite returns - a call where a configured agency is only assisting was discarded by the `Agencies` filter and no unit Assignments were written
+- :rocket: Unit Assignments take their role from the unit's most recent command log status, the call `Status` is added to the Event remarks and `Agencies` also matches an agency `Name`
+
 ### v1.11.0  - 2026-11-08
 
 - :tada: The CAD `CommandLog` of each call for service is written to the Event Timeline as `unit`, `status` and `comment` entries instead of a table in the remarks - each entry carries a content-derived `external_id` so CloudTAK upserts it in place and a poll never duplicates an entry, nothing is cached per entry. Requires the new `timeline:create` permission, which the `CommandLog` input is gated on
