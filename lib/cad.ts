@@ -35,7 +35,7 @@ export function describe(value: unknown, depth = 0): string | null {
 
     if (Array.isArray(value)) {
         const parts = value.map((entry) => describe(entry, depth + 1)).filter((part) => part !== null);
-        return parts.length ? parts.join(', ') : null;
+        return parts.length > 0 ? parts.join(', ') : null;
     }
 
     if (!isObject(value)) return null;
@@ -62,7 +62,7 @@ export function describe(value: unknown, depth = 0): string | null {
  */
 export function primaryIncident(value: unknown): string | null {
     if (Array.isArray(value)) {
-        const primary = value.find((entry) => isObject(entry) && entry.IsPrimary === true);
+        const primary: unknown = value.find((entry) => isObject(entry) && entry.IsPrimary === true);
         return describe(primary ?? value[0]);
     }
 
@@ -148,7 +148,7 @@ export function addressLine(record: Unknowns): string | null {
             addressPart(container.Zip)
         ].filter((part) => part !== null);
 
-        if (parts.length) return parts.join(', ');
+        if (parts.length > 0) return parts.join(', ');
     }
 
     return null;
@@ -201,14 +201,14 @@ export function commandLog(entries: Array<Static<typeof CADCommandLogEntry>> | n
         if (destination) metadata.destination = destination;
         if (tag) metadata.tag = tag;
 
-        return {
-            type: unit ? 'unit' : status ? 'status' : 'comment',
-            ...(occurred ? { occurred } : {}),
-            author: describe(entry.Creator?.CallSign ?? entry.Creator?.FullDescription ?? entry.Creator?.Username) ?? '',
-            body: describe(entry.Text) ?? status ?? '',
-            metadata,
-            external_id: commandLogId(entry)
-        };
+        const type = unit ? 'unit' : status ? 'status' : 'comment';
+        const author = describe(entry.Creator?.CallSign ?? entry.Creator?.FullDescription ?? entry.Creator?.Username) ?? '';
+        const body = describe(entry.Text) ?? status ?? '';
+        const external_id = commandLogId(entry);
+
+        if (!occurred) return { type, author, body, metadata, external_id };
+
+        return { type, occurred, author, body, metadata, external_id };
     });
 }
 
@@ -241,7 +241,7 @@ const UNIT_KEYS = ['Unit', 'Units'];
  * configured agency
  */
 export function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
-    if (!allowed.size) return true;
+    if (allowed.size === 0) return true;
 
     if (AGENCY_KEYS.some((key) => matchesAgency(allowed, record[key]))) return true;
 
@@ -252,7 +252,9 @@ export function allowedAgency(allowed: Set<string>, record: Unknowns): boolean {
         return units.some((unit) => {
             if (!isObject(unit)) return false;
             if (AGENCY_KEYS.some((key) => matchesAgency(allowed, unit[key]))) return true;
-            return isObject(unit.Unit) && AGENCY_KEYS.some((key) => matchesAgency(allowed, (unit.Unit as Unknowns)[key]));
+
+            const nested = unit.Unit;
+            return isObject(nested) && AGENCY_KEYS.some((key) => matchesAgency(allowed, nested[key]));
         });
     });
 }
@@ -282,13 +284,14 @@ export function parseBBox(value: string | undefined): BBox | null {
     if (!value) return null;
 
     const parts = value.split(',').map((part) => Number(part.trim()));
+    const [minLon, minLat, maxLon, maxLat] = parts;
 
-    if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part)) || parts[0] > parts[2] || parts[1] > parts[3]) {
+    if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part)) || minLon > maxLon || minLat > maxLat) {
         console.error(`not ok - invalid BoundingBox: ${value}`);
         return null;
     }
 
-    return parts as BBox;
+    return [minLon, minLat, maxLon, maxLat];
 }
 
 export function within(box: BBox | null, [lon, lat]: Coordinate): boolean {

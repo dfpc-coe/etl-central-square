@@ -21,11 +21,19 @@ type Call = { url: string; method: string; headers: http.IncomingHttpHeaders; bo
 function serve(handler: (call: Call, res: http.ServerResponse) => void): Promise<http.Server> {
     const server = http.createServer((req, res) => {
         let body = '';
-        req.on('data', (chunk) => body += chunk);
-        req.on('end', () => handler({ url: req.url ?? '', method: req.method ?? '', headers: req.headers, body }, res));
+        req.on('data', (chunk) => {
+            body += chunk;
+        });
+        req.on('end', () => {
+            handler({ url: req.url ?? '', method: req.method ?? '', headers: req.headers, body }, res);
+        });
     });
 
-    return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+    return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+            resolve(server);
+        });
+    });
 }
 
 function origin(server: http.Server): string {
@@ -40,18 +48,20 @@ test('CentralSquare - authenticates, follows pagination & caches the token', asy
         res.setHeader('Content-Type', 'application/json');
 
         if (call.url === '/api/token') {
-            return res.end(JSON.stringify({ access_token: 'token-1', expires_in: 7200 }));
+            res.end(JSON.stringify({ access_token: 'token-1', expires_in: 7200 }));
+            return;
         }
 
         const url = new URL(call.url, 'http://localhost');
         const skip = Number(url.searchParams.get('skip'));
 
         if (skip === 0) {
-            return res.end(JSON.stringify({
+            res.end(JSON.stringify({
                 previous: null,
                 next: `${url.pathname}?skip=${PAGE_LIMIT}&limit=${PAGE_LIMIT}`,
                 cfs_cores: [{ CFSNumber: 'A' }, { CFSNumber: 'B' }]
             }));
+            return;
         }
 
         res.end(JSON.stringify({ previous: 'x', next: null, cfs_cores: [{ CFSNumber: 'C' }] }));
@@ -65,7 +75,7 @@ test('CentralSquare - authenticates, follows pagination & caches the token', asy
             username: 'api',
             password: 'secret',
             domain: 'AGENCY',
-            token: { access_token: 'expired', expires: +new Date() - 1000 },
+            token: { access_token: 'expired', expires: Date.now() - 1000 },
             onToken: async (token) => {
                 tokens.push(token);
             }
@@ -94,7 +104,7 @@ test('CentralSquare - authenticates, follows pagination & caches the token', asy
         assert.equal(tokens[0].access_token, 'token-1');
 
         // A 2 hour token is refreshed an hour early
-        const remaining = tokens[0].expires - +new Date();
+        const remaining = tokens[0].expires - Date.now();
         assert.ok(remaining > 59 * 60 * 1000 && remaining <= 60 * 60 * 1000);
 
         // The issued token is reused
@@ -104,7 +114,11 @@ test('CentralSquare - authenticates, follows pagination & caches the token', asy
         assert.equal(calls[3].headers.authorization, 'Bearer token-1');
         assert.deepEqual(JSON.parse(calls[3].body), {});
     } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
     }
 });
 
@@ -116,12 +130,14 @@ test('CentralSquare - re-authenticates once when a cached token is rejected', as
         res.setHeader('Content-Type', 'application/json');
 
         if (call.url === '/api/token') {
-            return res.end(JSON.stringify({ access_token: 'fresh' }));
+            res.end(JSON.stringify({ access_token: 'fresh' }));
+            return;
         }
 
         if (call.headers.authorization !== 'Bearer fresh') {
             res.statusCode = 401;
-            return res.end('{}');
+            res.end('{}');
+            return;
         }
 
         res.end(JSON.stringify({ next: null, units: [{ UnitID: 'E1' }] }));
@@ -134,7 +150,7 @@ test('CentralSquare - re-authenticates once when a cached token is rejected', as
             url: origin(server),
             username: 'api',
             password: 'secret',
-            token: { access_token: 'revoked', expires: +new Date() + 60 * 60 * 1000 },
+            token: { access_token: 'revoked', expires: Date.now() + 60 * 60 * 1000 },
             onToken: async (token) => {
                 tokens.push(token);
             }
@@ -150,17 +166,22 @@ test('CentralSquare - re-authenticates once when a cached token is rejected', as
 
         // Undocumented lifetime falls back to 24 hours less the hour margin
         assert.equal(tokens.length, 1);
-        const remaining = tokens[0].expires - +new Date();
+        const remaining = tokens[0].expires - Date.now();
         assert.ok(remaining > 22 * 60 * 60 * 1000 && remaining <= 23 * 60 * 60 * 1000);
     } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
     }
 });
 
 test('CentralSquare - a failed page throws rather than returning a partial snapshot', async () => {
     const server = await serve((call, res) => {
         if (call.url === '/api/token') {
-            return res.end(JSON.stringify({ access_token: 'token' }));
+            res.end(JSON.stringify({ access_token: 'token' }));
+            return;
         }
 
         res.statusCode = 500;
@@ -172,6 +193,10 @@ test('CentralSquare - a failed page throws rather than returning a partial snaps
 
         await assert.rejects(api.calls(), /cfs_core\/search Failed: 500 boom/);
     } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        });
     }
 });

@@ -78,7 +78,7 @@ export default class Geocoder {
             suggest.searchParams.set('latitude', String((box[1] + box[3]) / 2));
         }
 
-        const suggestion = Value.Parse(SuggestResponse, await this.opts.fetch(suggest)).items[0];
+        const suggestion = Value.Parse(SuggestResponse, await this.opts.fetch(suggest)).items.at(0);
         if (!suggestion) return null;
 
         const forward = new URL('/api/search/forward', this.opts.api);
@@ -86,7 +86,7 @@ export default class Geocoder {
         forward.searchParams.set('magicKey', suggestion.magicKey);
         forward.searchParams.set('limit', '1');
 
-        const result = Value.Parse(ForwardResponse, await this.opts.fetch(forward)).items[0];
+        const result = Value.Parse(ForwardResponse, await this.opts.fetch(forward)).items.at(0);
         if (!result) return null;
 
         const candidate: Coordinate = [result.location.x, result.location.y];

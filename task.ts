@@ -5,7 +5,8 @@ import type { Feature } from '@tak-ps/node-cot'
 import ETL, { SchemaType, handler as internal, local, DataFlowType, InvocationType } from '@tak-ps/etl';
 import CentralSquare, { CADEvent, CADUnit } from './lib/central-square.js';
 import type { Unknowns } from './lib/central-square.js';
-import { EventCache, EventSync } from './lib/events.js';
+import { EventCacheSchema, EventSync } from './lib/events.js';
+import type { EventCache } from './lib/events.js';
 import Geocoder from './lib/geocode.js';
 import {
     addressLine,
@@ -96,17 +97,15 @@ export default class Task extends ETL {
         flow: DataFlowType = DataFlowType.Incoming
     ): Promise<TSchema | Array<NamedSchema>> {
         if (flow === DataFlowType.Incoming) {
-            if (type === SchemaType.Input) {
-                return InputSchema;
-            } else {
-                return [
-                    { id: SCHEMA_CAD_EVENT, schema: CADEvent },
-                    { id: SCHEMA_CAD_UNIT, schema: CADUnit }
-                ];
-            }
-        } else {
-            return Type.Object({});
+            if (type === SchemaType.Input) return InputSchema;
+
+            return [
+                { id: SCHEMA_CAD_EVENT, schema: CADEvent },
+                { id: SCHEMA_CAD_UNIT, schema: CADUnit }
+            ];
         }
+
+        return Type.Object({});
     }
 
     async control(): Promise<void> {
@@ -168,7 +167,7 @@ export default class Task extends ETL {
             }
         }
 
-        if (allowed.size) {
+        if (allowed.size > 0) {
             console.log(`ok - ${filtered} records discarded by Agencies filter (${[...allowed].join(', ')})`);
         }
 
@@ -228,7 +227,7 @@ export default class Task extends ETL {
 
         await this.patchEphemeral({ events: sync.cache });
 
-        if (allowed.size) {
+        if (allowed.size > 0) {
             console.log(`ok - ${filtered} records discarded by Agencies filter (${[...allowed].join(', ')})`);
         }
 
@@ -264,7 +263,7 @@ export default class Task extends ETL {
 
     eventCache(events: unknown): EventCache {
         try {
-            return this.type(EventCache, events ?? {});
+            return this.type(EventCacheSchema, events ?? {});
         } catch {
             return {};
         }
@@ -276,7 +275,7 @@ export default class Task extends ETL {
      */
     async patchEphemeral(values: Record<string, unknown>): Promise<void> {
         const layer = await this.fetchLayer();
-        const ephemeral = { ...(layer.incoming?.ephemeral ?? {}), ...values };
+        const ephemeral = { ...layer.incoming?.ephemeral, ...values };
 
         await this.setEphemeral(ephemeral);
 
@@ -285,6 +284,6 @@ export default class Task extends ETL {
 }
 
 await local(await Task.init(import.meta.url), import.meta.url);
-export async function handler(event: Event = {}) {
-    return await internal(await Task.init(import.meta.url), event);
+export async function handler(event: Event = {}): ReturnType<typeof internal> {
+    return internal(await Task.init(import.meta.url), event);
 }

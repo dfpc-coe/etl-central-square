@@ -188,7 +188,7 @@ export function envelope(body: Unknowns, preferred: string): Unknowns[] {
     }
 
     for (const candidate of candidates) {
-        if (Array.isArray(candidate)) return candidate.filter(isObject);
+        if (Array.isArray(candidate)) return candidate.filter((item: unknown): item is Unknowns => isObject(item));
     }
 
     return [];
@@ -215,19 +215,19 @@ export default class CentralSquare {
         this.debug = opts.debug ?? false;
         this.onToken = opts.onToken;
 
-        if (opts.token?.access_token && opts.token.expires && opts.token.expires > +new Date()) {
+        if (opts.token?.access_token && (opts.token.expires ?? 0) > Date.now()) {
             this.token = opts.token.access_token;
         }
     }
 
     /** Currently active Calls for Service - POST /api/cad/latest/cfs_core/search */
     async calls(): Promise<Unknowns[]> {
-        return await this.search(CALLS_PATH, 'cfs_cores', { CurrentlyActive: true });
+        return this.search(CALLS_PATH, 'cfs_cores', { CurrentlyActive: true });
     }
 
     /** AVL unit locations - POST /api/cad/latest/units/search */
     async units(): Promise<Unknowns[]> {
-        return await this.search(UNITS_PATH, 'units', {});
+        return this.search(UNITS_PATH, 'units', {});
     }
 
     /**
@@ -267,7 +267,7 @@ export default class CentralSquare {
 
         // Agencies can shorten the token lifetime - never let the margin consume
         // more than half of it or every invocation would re-authenticate
-        const lifetime = token.expires_in ? token.expires_in * 1000 : TOKEN_LIFETIME_MS;
+        const lifetime = token.expires_in !== undefined && token.expires_in !== 0 ? token.expires_in * 1000 : TOKEN_LIFETIME_MS;
         const margin = Math.min(TOKEN_REFRESH_MARGIN_MS, lifetime / 2);
 
         this.token = token.access_token;
@@ -275,7 +275,7 @@ export default class CentralSquare {
         if (this.onToken) {
             await this.onToken({
                 access_token: token.access_token,
-                expires: +new Date() + lifetime - margin
+                expires: Date.now() + lifetime - margin
             });
         }
 
@@ -313,7 +313,7 @@ export default class CentralSquare {
                 throw new Error(`Pro Suite ${path} Failed: ${res.status} ${await res.text()}`);
             }
 
-            const body = await res.json() as unknown;
+            const body: unknown = await res.json();
 
             if (this.debug) console.error(`DEBUG - ${path}: ${JSON.stringify(body)}`);
 
@@ -324,7 +324,8 @@ export default class CentralSquare {
             const items = envelope(body, key);
             records.push(...items);
 
-            if (!body.next || !items.length) break;
+            const more = Boolean(body.next);
+            if (!more || items.length === 0) break;
 
             if (page === MAX_PAGES - 1) {
                 console.log(`ok - MAX_PAGES (${MAX_PAGES}) reached, ${path} results were truncated`);
@@ -335,7 +336,7 @@ export default class CentralSquare {
     }
 
     private async request(url: URL, token: string, filter: Unknowns) {
-        return await fetch(url, {
+        return fetch(url, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${token}`,
